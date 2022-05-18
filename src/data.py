@@ -146,7 +146,7 @@ def get_extract_method(ext):
 
 
 def extract_rc(date):
-    fpath = get_all_files(f"{compressed_dir}", contains=(date,), excludes=("extracted",))[0]
+    fpath = get_all_files(f"{compressed_dir}", prefix="RC", contains=(date,), excludes=("extracted",))[0]
     fdir, fname = os.path.split(fpath)
     fbasename, fext = os.path.splitext(fname)
     extract_fn = get_extract_method(fext)
@@ -220,7 +220,7 @@ def extract_rc(date):
 
 
 def extract_rs(date):
-    fpath = get_all_files(f"{compressed_dir}", contains=(date,), excludes=("extracted",))[0]
+    fpath = get_all_files(f"{compressed_dir}", prefix="RS", contains=(date,), excludes=("extracted",))[0]
     fdir, fname = os.path.split(fpath)
     fbasename, fext = os.path.splitext(fname)
     extract_fn = get_extract_method(fext)
