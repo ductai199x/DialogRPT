@@ -8,3 +8,6 @@ test/
 doc/arxiv/
 model_card/
 
+bin/
+lib/python*
+pyvenv.cfg
