@@ -52,7 +52,7 @@ def extract_zst(archive: str, out_path: str):
     dctx = zstandard.ZstdDecompressor(max_window_size=2147483648)
 
     with open(archive, "rb") as input_file, open(out_path, "wb") as out_file:
-        for chunk in tqdm(dctx.read_to_iter(input_file, read_size=10 * 1024)):
+        for chunk in tqdm(dctx.read_to_iter(input_file, read_size=1000 * 1024), desc=f"Extracting {archive}: "):
             out_file.write(chunk)
 
 
@@ -69,7 +69,7 @@ def extract_bz2(archive: str, out_path: str):
     """
 
     with bz2.BZ2File(archive, "rb") as input_file, open(out_path, "wb") as out_file:
-        for data in tqdm(iter(lambda: input_file.read(1000 * 1024), b"")):
+        for data in tqdm(iter(lambda: input_file.read(1000 * 1024), b""), desc=f"Extracting {archive}: "):
             out_file.write(data)
 
 
@@ -86,7 +86,7 @@ def extract_xz(archive: str, out_path: str):
     """
 
     with lzma.LZMAFile(archive, "rb") as input_file, open(out_path, "wb") as out_file:
-        for data in tqdm(iter(lambda: input_file.read(1000 * 1024), b"")):
+        for data in tqdm(iter(lambda: input_file.read(1000 * 1024), b""), desc=f"Extracting {archive}: "):
             out_file.write(data)
 
 
@@ -122,31 +122,33 @@ def valid_sub(sub):
     return True
 
 
-def get_dates(year_from, year_to=None):
-    if year_to is None:
-        year_to = year_from
-    dates = []
-    for year in range(year_from, year_to + 1):
-        for month in range(1, 12 + 1):
-            dates.append(f"{year}-{month:02d}")
+def get_dates(year):
+    # search for the year in the compressed files
+    compressed_files = get_all_files(compressed_dir)
+    dates = [os.path.splitext(os.path.split(path)[1])[0][3:] for path in compressed_files]
+    dates = [d for d in dates if str(year) in d]
+    if len(dates) == 0:
+        raise RuntimeError(
+            f"No {year} available in {compressed_dir}. Please download both RS's and RC's for that year."
+        )
     return dates
 
 
 def get_extract_method(ext):
     if ext == ".bz2":
-        return lambda i, o: extract_bz2(i, o)
+        return extract_bz2
     elif ext == ".zst":
-        return lambda i, o: extract_zst(i, o)
+        return extract_zst
     if ext == ".xz":
-        return lambda i, o: extract_xz(i, o)
+        return extract_xz
 
 
 def extract_rc(date):
-    fpath = get_all_files(f"{compressed_dir}", prefix=date)[0]
+    fpath = get_all_files(f"{compressed_dir}", contains=(date,), excludes=("extracted",))[0]
     fdir, fname = os.path.split(fpath)
     fbasename, fext = os.path.splitext(fname)
     extract_fn = get_extract_method(fext)
-    extracted_path = f"{compressed_dir}/{fbasename}"
+    extracted_path = f"{compressed_dir}/{fbasename}.extracted"
 
     extract_fn(fpath, extracted_path)
 
@@ -216,11 +218,11 @@ def extract_rc(date):
 
 
 def extract_rs(date):
-    fpath = get_all_files(f"{compressed_dir}", prefix=date)[0]
+    fpath = get_all_files(f"{compressed_dir}", contains=(date,), excludes=("extracted",))[0]
     fdir, fname = os.path.split(fpath)
     fbasename, fext = os.path.splitext(fname)
     extract_fn = get_extract_method(fext)
-    extracted_path = f"{compressed_dir}/{fbasename}"
+    extracted_path = f"{compressed_dir}/{fbasename}.extracted"
 
     extract_fn(fpath, extracted_path)
 
@@ -759,7 +761,7 @@ def add_seq(sub, year, feedback, overwrite=False):
     print(s)
 
 
-def combine_sub(year_from, year_to, feedback, overwrite=False, skip_same_pos=True):
+def combine_sub(year, feedback, overwrite=False, skip_same_pos=True):
     dir = f"{output_dir}/{feedback}"
     os.makedirs(dir, exist_ok=True)
     path_out = f"{dir}/raw.tsv"
@@ -775,33 +777,32 @@ def combine_sub(year_from, year_to, feedback, overwrite=False, skip_same_pos=Tru
     non_empty_subreddits = 0
     for sub in subs:
         empty = True
-        for year in range(year_from, year_to + 1):
-            path = f"{redditsub_dir}/{sub}/{year}_{feedback}_ids.tsv"
-            if not os.path.exists(path):
+        path = f"{redditsub_dir}/{sub}/{year}_{feedback}_ids.tsv"
+        if not os.path.exists(path):
+            continue
+        for line in open(path, "r", encoding="utf-8"):
+            if line.startswith("#"):
                 continue
-            for line in open(path, "r", encoding="utf-8"):
-                if line.startswith("#"):
-                    continue
-                line = line.strip("\n")
-                if not line:
-                    continue
-                lines.append(line)
-                empty = False
-                n += 1
-                if n % 1e5 == 0:
-                    with open(path_out, "a", encoding="utf-8") as f:
-                        f.write("\n".join(lines) + "\n")
-                    lines = []
-                    print(
-                        f"[{year} {feedback}] saved {n/1e6:.2f} M lines from {non_empty_subreddits+1} subreddits, now is {sub}"
-                    )
+            line = line.strip("\n")
+            if not line:
+                continue
+            lines.append(line)
+            empty = False
+            n += 1
+            if n % 1e5 == 0:
+                with open(path_out, "a", encoding="utf-8") as f:
+                    f.write("\n".join(lines) + "\n")
+                lines = []
+                print(
+                    f"[{year} {feedback}] saved {n/1e6:.2f} M lines from {non_empty_subreddits+1} subreddits, now is {sub}"
+                )
         if not empty:
             non_empty_subreddits += 1
 
     with open(path_out, "a", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
-    s = f"[{year_from}-{year_to} {feedback}] saved {n/1e6:.2f} M lines from {non_empty_subreddits} subreddits"
+    s = f"[{year} {feedback}] saved {n/1e6:.2f} M lines from {non_empty_subreddits} subreddits"
     with open(path_done, "w") as f:
         f.write(s)
     print(s)
@@ -935,36 +936,26 @@ def build_basic(year):
         calc_feedback(sub, year, overwrite=False)
 
 
-def build_pairs(year_from, year_to, feedback):
+def build_pairs(year, feedback):
     subs = get_subs()
-    for year in range(year_from, year_to + 1):
-        for sub in subs:
-            create_pairs(year, sub, feedback, overwrite=False)
-            add_seq(sub, year, feedback, overwrite=False)
-    path = combine_sub(year_from, year_to, feedback)
+    for sub in subs:
+        create_pairs(year, sub, feedback, overwrite=False)
+        add_seq(sub, year, feedback, overwrite=False)
+    path = combine_sub(year, feedback)
     split_by_root(path)
     for part in ["train", "vali"]:
         shuffle(feedback, part)
 
 
 def main():
+    year = 2011
+    build_json(year)
+    build_basic(year)
 
-    pass
+    tasks = ["updown", "depth", "width"]
+    for t in tasks:
+        build_pairs(year, year, t)
 
 
 if __name__ == "__main__":
     main()
-    # import argparse
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument("task", type=str)
-    # parser.add_argument("year", type=int)
-    # parser.add_argument("--year_to", type=int)
-    # args = parser.parse_args()
-    # if args.task == "bz2":
-    #     build_json(args.year)
-    # elif args.task == "basic":
-    #     build_basic(args.year)
-    # elif args.task in ["updown", "depth", "width"]:
-    #     build_pairs(args.year, args.year_to, args.task)
-    # else:
-    #     raise ValueError
