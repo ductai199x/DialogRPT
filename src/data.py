@@ -152,7 +152,8 @@ def extract_rc(date, is_extracted=False):
     extract_fn = get_extract_method(fext)
     extracted_path = f"{compressed_dir}/{fbasename}.extracted"
 
-    if not is_extracted: extract_fn(fpath, extracted_path)
+    if not is_extracted:
+        extract_fn(fpath, extracted_path)
 
     nodes = dict()
     edges = dict()
@@ -226,7 +227,8 @@ def extract_rs(date, is_extracted=False):
     extract_fn = get_extract_method(fext)
     extracted_path = f"{compressed_dir}/{fbasename}.extracted"
 
-    if not is_extracted: extract_fn(fpath, extracted_path)
+    if not is_extracted:
+        extract_fn(fpath, extracted_path)
 
     roots = dict()
     subs = set()
@@ -678,11 +680,10 @@ def add_seq(sub, year, feedback, overwrite=False):
     turn_sep = " 50256 "
     path_out = f"{dir}/{fname}_ids.tsv"
     path_done = f"{path_out}.done"
-    path = f"{dir}/{fname}.tsv"
 
     if os.path.exists(path_done) and not overwrite:
         return
-    if not os.path.exists(path):
+    if not os.path.exists(f"{dir}/{fname}.tsv"):
         return
 
     seq = dict()
@@ -695,6 +696,7 @@ def add_seq(sub, year, feedback, overwrite=False):
             continue
         name, txt, ids = ss
         seq[name] = ids
+
     print(f"Loaded {len(seq)} seq")
     with open(path_out, "w", encoding="utf-8") as f:
         pass
@@ -703,6 +705,7 @@ def add_seq(sub, year, feedback, overwrite=False):
     lines = []
     n = 0
     m = 0
+    path = f"{dir}/{fname}.tsv"
     for line in open(path, "r", encoding="utf-8"):
         line = line.strip("\n")
         if line.startswith("#"):
@@ -811,19 +814,18 @@ def combine_sub(year, feedback, overwrite=False, skip_same_pos=True):
     return path_out
 
 
-def split_by_root(path, p_test=0.01):
-    print("spliting by root " + path)
-    lines = {
+def split_by_root(path, p_test=0.15):
+    print(f"Spliting by root path: {path}, Test vs. Val ratio: {1-p_test}-{p_test}")
+    datasets = {
         "train": [],
         "vali": [],
     }
     prev = None
     n = 0
 
-    for k in lines:
-        if len(lines[k]) == 0:
-            continue
-        open(path + "." + k, "w", encoding="utf-8")
+    for set_ in datasets:
+        with open(f"{path}.{set_}", "w", encoding="utf-8") as f:
+            pass
 
     for line in open(path, "r", encoding="utf-8"):
         line = line.strip("\n")
@@ -833,28 +835,26 @@ def split_by_root(path, p_test=0.01):
         root = cxt.strip().split()[0]
         if root != prev:
             if np.random.random() < p_test:
-                k = "vali"
+                set_ = "vali"
             else:
-                k = "train"
-        # pdb.set_trace()
-        lines[k].append(line)
+                set_ = "train"
+        datasets[set_].append(line)
         prev = root
         n += 1
         if n % 1e6 == 0:
-            print("read %i M" % (n / 1e6))
-            for k in lines:
-                if len(lines[k]) == 0:
+            for set_ in datasets:
+                if len(datasets[set_]) == 0:
                     continue
-                with open(path + "." + k, "a", encoding="utf-8") as f:
-                    f.write("\n".join(lines[k]) + "\n")
-                lines[k] = []
+                with open(f"{path}.{set_}", "a", encoding="utf-8") as f:
+                    f.write("\n".join(datasets[set_]) + "\n")
+                datasets[set_] = []
 
-    for k in lines:
-        if len(lines[k]) == 0:
+    print(f"Test vs. Val samples: {datasets['train']}-{datasets['vali']}")
+    for set_ in datasets:
+        if len(datasets[set_]) == 0:
             continue
-        with open(path + "." + k, "a", encoding="utf-8") as f:
-            f.write("\n".join(lines[k]))
-        lines[k] = []
+        with open(f"{path}.{set_}", "a", encoding="utf-8") as f:
+            f.write("\n".join(datasets[set_]))
 
 
 def shuffle(feedback, part, n_temp=10):
@@ -863,7 +863,7 @@ def shuffle(feedback, part, n_temp=10):
     path_out = f"{dir}/{part}.tsv"
     dir_temp = f"{output_dir}/temp/{feedback}"
 
-    print("slicing " + path)
+    print(f"Shuffling {path}...")
     os.makedirs(dir_temp, exist_ok=True)
     lines = [[] for _ in range(n_temp)]
 
@@ -899,16 +899,16 @@ def shuffle(feedback, part, n_temp=10):
 
     # and then merge
     open(path_out, "w", encoding="utf-8")
-    print(dir_temp)
     for i in range(n_temp):
-        print(f"reading temp{i}")
         lines = open(f"{dir_temp}/temp{i}", "r", encoding="utf-8").readlines()
-        print("shuffling")
         jj = list(range(len(lines)))
         np.random.shuffle(jj)
-        print("writing")
         with open(path_out, "a", encoding="utf-8") as f:
             f.write("\n".join([lines[j].strip("\n") for j in jj]) + "\n")
+        os.remove(f"{dir_temp}/temp{i}")
+
+    print(f"Done with {path}. Cleaning up.")
+    os.removedirs(f"{dir_temp}")
 
 
 def get_subs():
@@ -940,9 +940,9 @@ def build_basic(year):
 def build_pairs(year, feedback):
     subs = get_subs()
     for sub in subs:
-        create_pairs(year, sub, feedback, overwrite=False)
-        add_seq(sub, year, feedback, overwrite=False)
-    path = combine_sub(year, feedback)
+        create_pairs(year, sub, feedback, overwrite=True)
+        add_seq(sub, year, feedback, overwrite=True)
+    path = combine_sub(year, feedback, overwrite=True)
     split_by_root(path)
     for part in ["train", "vali"]:
         shuffle(feedback, part)
@@ -950,8 +950,8 @@ def build_pairs(year, feedback):
 
 def main():
     year = 2011
-    build_json(year, is_extracted=False)
-    build_basic(year)
+    # build_json(year, is_extracted=True)
+    # build_basic(year)
 
     tasks = ["updown", "depth", "width"]
     for t in tasks:
