@@ -11,3 +11,7 @@ model_card/
 bin/
 lib/python*
 pyvenv.cfg
+etc/
+share/
+include/
+*scratch*
