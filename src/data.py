@@ -145,14 +145,14 @@ def get_extract_method(ext):
         return extract_xz
 
 
-def extract_rc(date):
+def extract_rc(date, is_extracted=False):
     fpath = get_all_files(f"{compressed_dir}", prefix="RC", contains=(date,), excludes=("extracted",))[0]
     fdir, fname = os.path.split(fpath)
     fbasename, fext = os.path.splitext(fname)
     extract_fn = get_extract_method(fext)
     extracted_path = f"{compressed_dir}/{fbasename}.extracted"
 
-    extract_fn(fpath, extracted_path)
+    if not is_extracted: extract_fn(fpath, extracted_path)
 
     nodes = dict()
     edges = dict()
@@ -172,12 +172,12 @@ def extract_rc(date):
             if sub not in subs:
                 with open(f"{dir}/{date}_nodes.jsonl", "w", encoding="utf-8") as f:
                     pass
-                with open(f"{dir}/{date}_edges.jsonl", "w", encoding="utf-8") as f:
+                with open(f"{dir}/{date}_edges.tsv", "w", encoding="utf-8") as f:
                     pass
                 subs.add(sub)
             with open(f"{dir}/{date}_nodes.jsonl", "a", encoding="utf-8") as f:
                 f.write("\n".join(nodes[sub]) + "\n")
-            with open(f"{dir}/{date}_edges.jsonl", "a", encoding="utf-8") as f:
+            with open(f"{dir}/{date}_edges.tsv", "a", encoding="utf-8") as f:
                 f.write("\n".join(edges[sub]) + "\n")
 
     with open(extracted_path, "r", encoding="utf-8") as extracted_file:
@@ -219,14 +219,14 @@ def extract_rc(date):
         f.write(f"[{date}] saved {m}/{n}\n")
 
 
-def extract_rs(date):
+def extract_rs(date, is_extracted=False):
     fpath = get_all_files(f"{compressed_dir}", prefix="RS", contains=(date,), excludes=("extracted",))[0]
     fdir, fname = os.path.split(fpath)
     fbasename, fext = os.path.splitext(fname)
     extract_fn = get_extract_method(fext)
     extracted_path = f"{compressed_dir}/{fbasename}.extracted"
 
-    extract_fn(fpath, extracted_path)
+    if not is_extracted: extract_fn(fpath, extracted_path)
 
     roots = dict()
     subs = set()
@@ -279,11 +279,11 @@ def extract_rs(date):
             m += 1
             if m % 1e4 == 0:
                 save(roots)
-                print(f"[RC_{date}] saved {m/1e6:.2f}/{n/1e6:.2f} M, {len(subs)} subreddits")
+                print(f"[RS_{date}] saved {m/1e6:.2f}/{n/1e6:.2f} M, {len(subs)} subreddits")
                 roots = dict()
 
     save(roots)
-    print(f"[RC_{date}] FINAL {m/1e6:.2f}/{n/1e6:.2f} M, {len(subs)} subreddits ================")
+    print(f"[RS_{date}] FINAL {m/1e6:.2f}/{n/1e6:.2f} M, {len(subs)} subreddits ================")
     with open(f"{jsonl_dir}/readme_roots.txt", "a", encoding="utf-8") as f:
         f.write(f"[{date}] saved {m}/{n}\n")
 
@@ -466,7 +466,7 @@ def calc_feedback(sub, year, overwrite=False):
     if not overwrite and os.path.exists(path_done):
         return
 
-    path_pkl = f"{dir}/{year}_trees.pkl" % (dir, year)
+    path_pkl = f"{dir}/{year}_trees.pkl"
     if not os.path.exists(path_pkl):
         return
     trees = pickle.load(open(path_pkl, "rb"))
@@ -919,10 +919,10 @@ def get_subs():
     # return subs
 
 
-def build_json(year):
+def build_json(year, is_extracted=False):
     for date in get_dates(year):
-        extract_rc(date)
-        extract_rs(date)
+        extract_rc(date, is_extracted=False)
+        extract_rs(date, is_extracted=False)
 
 
 def build_basic(year):
@@ -950,12 +950,12 @@ def build_pairs(year, feedback):
 
 def main():
     year = 2011
-    build_json(year)
+    build_json(year, is_extracted=False)
     build_basic(year)
 
     tasks = ["updown", "depth", "width"]
     for t in tasks:
-        build_pairs(year, year, t)
+        build_pairs(year, t)
 
 
 if __name__ == "__main__":
