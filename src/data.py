@@ -921,8 +921,8 @@ def get_subs():
 
 def build_json(year, is_extracted=False):
     for date in get_dates(year):
-        extract_rc(date, is_extracted=False)
-        extract_rs(date, is_extracted=False)
+        extract_rc(date, is_extracted)
+        extract_rs(date, is_extracted)
 
 
 def build_basic(year):
