@@ -52,7 +52,9 @@ def extract_zst(archive: str, out_path: str):
     dctx = zstandard.ZstdDecompressor(max_window_size=2147483648)
 
     with open(archive, "rb") as input_file, open(out_path, "wb") as out_file:
-        for chunk in tqdm(dctx.read_to_iter(input_file, read_size=1000 * 1024), desc=f"Extracting {archive}: "):
+        for chunk in tqdm(
+            dctx.read_to_iter(input_file, read_size=1000 * 1024), desc=f"Extracting {archive}: "
+        ):
             out_file.write(chunk)
 
 
@@ -810,7 +812,6 @@ def combine_sub(year, feedback, overwrite=False, skip_same_pos=True):
 
 
 def split_by_root(path, p_test=0.01):
-
     print("spliting by root " + path)
     lines = {
         "train": [],
