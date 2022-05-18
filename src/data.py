@@ -126,7 +126,7 @@ def get_dates(year):
     # search for the year in the compressed files
     compressed_files = get_all_files(compressed_dir)
     dates = [os.path.splitext(os.path.split(path)[1])[0][3:] for path in compressed_files]
-    dates = [d for d in dates if str(year) in d]
+    dates = list(set([d for d in dates if str(year) in d]))
     if len(dates) == 0:
         raise RuntimeError(
             f"No {year} available in {compressed_dir}. Please download both RS's and RC's for that year."
