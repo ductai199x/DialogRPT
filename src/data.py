@@ -182,6 +182,7 @@ def extract_rc(date, is_extracted=False):
                 f.write("\n".join(edges[sub]) + "\n")
 
     with open(extracted_path, "r", encoding="utf-8") as extracted_file:
+        pbar = tqdm(total=sum(1 for line in open(extracted_path)))
         for line in extracted_file:
             n += 1
             line = line.strip("\n")
@@ -210,9 +211,10 @@ def extract_rc(date, is_extracted=False):
             m += 1
             if m % 1e5 == 0:
                 save(nodes, edges)
-                print(f"[RC_{date}] saved {m/1e6:.2f}/{n/1e6:.2f} M, {len(subs)} subreddits")
+                pbar.set_postfix_str(f"[RC_{date}] saved {m/1e6:.2f}/{n/1e6:.2f} M, {len(subs)} subreddits")
                 nodes = dict()
                 edges = dict()
+            if m % 1e3: pbar.update()
 
     save(nodes, edges)
     print(f"[RC_{date}] FINAL {m/1e6:.2f}/{n/1e6:.2f} M, {len(subs)} subreddits ================")
@@ -252,6 +254,7 @@ def extract_rs(date, is_extracted=False):
                 f.write("\n".join(roots[sub]) + "\n")
 
     with open(extracted_path, "r", encoding="utf-8") as extracted_file:
+        pbar = tqdm(total=sum(1 for line in open(extracted_path)))
         for line in extracted_file:
             n += 1
             line = line.strip("\n")
@@ -281,8 +284,9 @@ def extract_rs(date, is_extracted=False):
             m += 1
             if m % 1e4 == 0:
                 save(roots)
-                print(f"[RS_{date}] saved {m/1e6:.2f}/{n/1e6:.2f} M, {len(subs)} subreddits")
+                pbar.set_postfix_str(f"[RS_{date}] saved {m/1e6:.2f}/{n/1e6:.2f} M, {len(subs)} subreddits")
                 roots = dict()
+            if m % 1e3: pbar.update()
 
     save(roots)
     print(f"[RS_{date}] FINAL {m/1e6:.2f}/{n/1e6:.2f} M, {len(subs)} subreddits ================")
@@ -934,7 +938,7 @@ def build_basic(year):
         extract_time(sub, year)
         extract_txt(sub, year, tokenizer)
         extract_trees(sub, year)
-        calc_feedback(sub, year, overwrite=False)
+        calc_feedback(sub, year, overwrite=True)
 
 
 def build_pairs(year, feedback):
@@ -950,8 +954,8 @@ def build_pairs(year, feedback):
 
 def main():
     year = 2011
-    # build_json(year, is_extracted=True)
-    # build_basic(year)
+    build_json(year, is_extracted=True)
+    build_basic(year)
 
     tasks = ["updown", "depth", "width"]
     for t in tasks:
