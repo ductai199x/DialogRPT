@@ -849,7 +849,7 @@ def split_by_root(path, p_test=0.15):
                     f.write("\n".join(datasets[set_]) + "\n")
                 datasets[set_] = []
 
-    print(f"Test vs. Val samples: {datasets['train']}-{datasets['vali']}")
+    print(f"Test vs. Val samples: {len(datasets['train'])}-{len(datasets['vali'])}")
     for set_ in datasets:
         if len(datasets[set_]) == 0:
             continue
