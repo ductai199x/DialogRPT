@@ -954,7 +954,7 @@ def build_pairs(year, feedback):
 
 def main():
     year = 2011
-    build_json(year, is_extracted=True)
+    build_json(year, is_extracted=False)
     build_basic(year)
 
     tasks = ["updown", "depth", "width"]
