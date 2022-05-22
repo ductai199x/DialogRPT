@@ -1,22 +1,20 @@
-# author: Xiang Gao at Microsoft Research AI NLP Group
-
-
 import bz2
 import json
 import lzma
 import os
 import pickle
+import time
+from argparse import ArgumentParser
+from multiprocessing import Manager, Pool
 
 import numpy as np
+import rich
 import zstandard
 from tqdm.auto import tqdm
 
-root_dir = "."
-data_dir = f"{root_dir}/data"
-compressed_dir = f"{data_dir}/compressed"
-jsonl_dir = f"{data_dir}/json"
-redditsub_dir = f"{data_dir}/subs"
-output_dir = f"{data_dir}/out"
+parser = ArgumentParser()
+console = rich.get_console()
+MAX_PARALLEL_PROCS = 8
 
 
 def get_all_files(path, prefix="", suffix="", contains=("",), excludes=("",)):
@@ -34,31 +32,58 @@ def get_all_files(path, prefix="", suffix="", contains=("",), excludes=("",)):
     return files
 
 
-def extract_zst(archive: str, out_path: str):
+def extract_zst(archive: str, out_path: str, pos: int, overwrite: bool, lock: Manager()):
     """extract .zst file
     works on Windows, Linux, MacOS, etc.
 
     Parameters
     ----------
     archive: str
-      .zst file to extract
+        .zst file to extract
     out_path: str
-      directory to extract files and directories to
+        directory to extract files and directories to
+    pos: int
+        the position of the tqdm progress bar on the terminal
+    overwrite: bool
+        flag to overwrite the file if exists
+    lock: SyncManager
+        a lock to print the tqdm bar to the terminal asynchronously
     """
+    with lock:
+        if os.path.exists(out_path) and out_path != os.devnull:
+            if os.path.isfile(out_path):
+                if overwrite:
+                    console.print(f"[bold yellow][WARN]:[/bold yellow] {out_path} exists. Overwriting.")
+                else:
+                    console.print(f"[bold yellow][WARN]:[/bold yellow] {out_path} exists. Skipping.")
+                    return
+            else:
+                console.print(f"[bold red][ERROR]:[/bold red] {out_path} exists but it's not a file!")
+                raise FileExistsError
 
-    if zstandard is None:
-        raise ImportError("pip install zstandard")
+    with lock:
+        pbar = tqdm(
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
+            miniters=1,
+            desc=f"Extracting {os.path.split(archive)[1]}",
+            position=pos,
+            leave=False,
+        )
 
     dctx = zstandard.ZstdDecompressor(max_window_size=2147483648)
-
     with open(archive, "rb") as input_file, open(out_path, "wb") as out_file:
-        for chunk in tqdm(
-            dctx.read_to_iter(input_file, read_size=1000 * 1024), desc=f"Extracting {archive}: "
-        ):
+        for chunk in dctx.read_to_iter(input_file, read_size=2000 * 1024):
             out_file.write(chunk)
+            with lock:
+                pbar.update(len(chunk))
+
+    with lock:
+        pbar.close()
 
 
-def extract_bz2(archive: str, out_path: str):
+def extract_bz2(archive: str, out_path: str, pos: int, overwrite: bool, lock: Manager()):
     """extract .bz2 file
     works on Windows, Linux, MacOS, etc.
 
@@ -68,14 +93,47 @@ def extract_bz2(archive: str, out_path: str):
         .bz2 file to extract
     out_path: str
         directory to extract files and directories to
+    pos: int
+        the position of the tqdm progress bar on the terminal
+    overwrite: bool
+        flag to overwrite the file if exists
+    lock: SyncManager
+        a lock to print the tqdm bar to the terminal asynchronously
     """
+    with lock:
+        if os.path.exists(out_path) and out_path != os.devnull:
+            if os.path.isfile(out_path):
+                if overwrite:
+                    console.print(f"[bold yellow][WARN]:[/bold yellow] {out_path} exists. Overwriting.")
+                else:
+                    console.print(f"[bold yellow][WARN]:[/bold yellow] {out_path} exists. Skipping.")
+                    return
+            else:
+                console.print(f"[bold red][ERROR]:[/bold red] {out_path} exists but it's not a file!")
+                raise FileExistsError
+
+    with lock:
+        pbar = tqdm(
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
+            miniters=1,
+            desc=f"Extracting {os.path.split(archive)[1]}",
+            position=pos,
+            leave=False,
+        )
 
     with bz2.BZ2File(archive, "rb") as input_file, open(out_path, "wb") as out_file:
-        for data in tqdm(iter(lambda: input_file.read(1000 * 1024), b""), desc=f"Extracting {archive}: "):
-            out_file.write(data)
+        for chunk in iter(lambda: input_file.read(2000 * 1024), b""):
+            out_file.write(chunk)
+            with lock:
+                pbar.update(len(chunk))
+
+    with lock:
+        pbar.close()
 
 
-def extract_xz(archive: str, out_path: str):
+def extract_xz(archive: str, out_path: str, pos: int, overwrite: bool, lock: Manager()):
     """extract .xz file
     works on Windows, Linux, MacOS, etc.
 
@@ -85,11 +143,44 @@ def extract_xz(archive: str, out_path: str):
         .xz file to extract
     out_path: str
         directory to extract files and directories to
+    pos: int
+        the position of the tqdm progress bar on the terminal
+    overwrite: bool
+        flag to overwrite the file if exists
+    lock: SyncManager
+        a lock to print the tqdm bar to the terminal asynchronously
     """
+    with lock:
+        if os.path.exists(out_path) and out_path != os.devnull:
+            if os.path.isfile(out_path):
+                if overwrite:
+                    console.print(f"[bold yellow][WARN]:[/bold yellow] {out_path} exists. Overwriting.")
+                else:
+                    console.print(f"[bold yellow][WARN]:[/bold yellow] {out_path} exists. Skipping.")
+                    return
+            else:
+                console.print(f"[bold red][ERROR]:[/bold red] {out_path} exists but it's not a file!")
+                raise FileExistsError
+
+    with lock:
+        pbar = tqdm(
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
+            miniters=1,
+            desc=f"Extracting {os.path.split(archive)[1]}",
+            position=pos,
+            leave=False,
+        )
 
     with lzma.LZMAFile(archive, "rb") as input_file, open(out_path, "wb") as out_file:
-        for data in tqdm(iter(lambda: input_file.read(1000 * 1024), b""), desc=f"Extracting {archive}: "):
-            out_file.write(data)
+        for chunk in iter(lambda: input_file.read(2000 * 1024), b""):
+            out_file.write(chunk)
+            with lock:
+                pbar.update(len(chunk))
+
+    with lock:
+        pbar.close()
 
 
 def valid_sub(sub):
@@ -145,15 +236,8 @@ def get_extract_method(ext):
         return extract_xz
 
 
-def extract_rc(date, is_extracted=False):
-    fpath = get_all_files(f"{compressed_dir}", prefix="RC", contains=(date,), excludes=("extracted",))[0]
-    fdir, fname = os.path.split(fpath)
-    fbasename, fext = os.path.splitext(fname)
-    extract_fn = get_extract_method(fext)
-    extracted_path = f"{compressed_dir}/{fbasename}.extracted"
-
-    if not is_extracted:
-        extract_fn(fpath, extracted_path)
+def extract_rc(date, print_pos, lock):
+    extracted_path = f"{compressed_dir}/RC_{date}.extracted"
 
     nodes = dict()
     edges = dict()
@@ -182,7 +266,13 @@ def extract_rc(date, is_extracted=False):
                 f.write("\n".join(edges[sub]) + "\n")
 
     with open(extracted_path, "r", encoding="utf-8") as extracted_file:
-        pbar = tqdm(total=sum(1 for line in open(extracted_path)))
+        with lock:
+            pbar = tqdm(
+                total=sum(1 for l in open(extracted_path)),
+                position=print_pos,
+                ncols=120,
+                leave=False,
+            )
         for line in extracted_file:
             n += 1
             line = line.strip("\n")
@@ -209,28 +299,28 @@ def extract_rc(date, is_extracted=False):
             edges[node["subreddit"]].append(f"{node['link_id']}\t{node['parent_id']}\t{node['name']}")
 
             m += 1
-            if m % 1e5 == 0:
+            if m % 2e4 == 0:
                 save(nodes, edges)
-                pbar.set_postfix_str(f"[RC_{date}] saved {m/1e6:.2f}/{n/1e6:.2f} M, {len(subs)} subreddits")
                 nodes = dict()
                 edges = dict()
-            if m % 1e3: pbar.update()
+                with lock:
+                    pbar.set_postfix_str(
+                        f"[RC_{date}] saved {m/1e6:.2f}/{n/1e6:.2f} M, {len(subs)} subreddits"
+                    )
+                    pbar.update(2e4)
 
     save(nodes, edges)
-    print(f"[RC_{date}] FINAL {m/1e6:.2f}/{n/1e6:.2f} M, {len(subs)} subreddits ================")
+    with lock:
+        pbar.clear()
+        pbar.close()
+        pbar.display(f"[RC_{date}] FINAL {m/1e6:.2f}/{n/1e6:.2f} M, {len(subs)} subreddits ================")
+
     with open(f"{jsonl_dir}/readme.txt", "a", encoding="utf-8") as f:
         f.write(f"[{date}] saved {m}/{n}\n")
 
 
-def extract_rs(date, is_extracted=False):
-    fpath = get_all_files(f"{compressed_dir}", prefix="RS", contains=(date,), excludes=("extracted",))[0]
-    fdir, fname = os.path.split(fpath)
-    fbasename, fext = os.path.splitext(fname)
-    extract_fn = get_extract_method(fext)
-    extracted_path = f"{compressed_dir}/{fbasename}.extracted"
-
-    if not is_extracted:
-        extract_fn(fpath, extracted_path)
+def extract_rs(date, print_pos, lock):
+    extracted_path = f"{compressed_dir}/RS_{date}.extracted"
 
     roots = dict()
     subs = set()
@@ -254,7 +344,13 @@ def extract_rs(date, is_extracted=False):
                 f.write("\n".join(roots[sub]) + "\n")
 
     with open(extracted_path, "r", encoding="utf-8") as extracted_file:
-        pbar = tqdm(total=sum(1 for line in open(extracted_path)))
+        with lock:
+            pbar = tqdm(
+                total=sum(1 for l in open(extracted_path)),
+                position=print_pos,
+                ncols=120,
+                leave=False,
+            )
         for line in extracted_file:
             n += 1
             line = line.strip("\n")
@@ -282,19 +378,28 @@ def extract_rs(date, is_extracted=False):
             roots[root["subreddit"]].append(line)
 
             m += 1
-            if m % 1e4 == 0:
+            if m % 2e4 == 0:
                 save(roots)
-                pbar.set_postfix_str(f"[RS_{date}] saved {m/1e6:.2f}/{n/1e6:.2f} M, {len(subs)} subreddits")
                 roots = dict()
-            if m % 1e3: pbar.update()
-
+                with lock:
+                    pbar.set_postfix_str(
+                        f"[RS_{date}] saved {m/1e6:.2f}/{n/1e6:.2f} M, {len(subs)} subreddits"
+                    )
+                    pbar.update(2e4)
     save(roots)
-    print(f"[RS_{date}] FINAL {m/1e6:.2f}/{n/1e6:.2f} M, {len(subs)} subreddits ================")
+    with lock:
+        pbar.clear()
+        pbar.close()
+        pbar.display(f"[RS_{date}] FINAL {m/1e6:.2f}/{n/1e6:.2f} M, {len(subs)} subreddits ================")
+
     with open(f"{jsonl_dir}/readme_roots.txt", "a", encoding="utf-8") as f:
         f.write(f"[{date}] saved {m}/{n}\n")
 
 
-def extract_txt(sub, year, tokenizer, overwrite=False, max_subword=3):
+def extract_txt(sub, year, pos, lock, tokenizer, overwrite=True, max_subword=3):
+    print = lambda msg: print_mult_procs(msg, lock, pos)
+    print(f"[{sub}-{year}] Extracting Texts")
+
     dir = f"{redditsub_dir}/{sub}"
     os.makedirs(dir, exist_ok=True)
     path_out = f"{dir}/{year}_txt.tsv"
@@ -330,8 +435,7 @@ def extract_txt(sub, year, tokenizer, overwrite=False, max_subword=3):
         txt = " ".join(ww)
         for c in ["\t", "\n", "\r"]:  # delimiter or newline
             txt = txt.replace(c, " ")
-
-        ids = tokenizer.encode(txt)
+        ids = tokenizer.encode(txt, max_length=1024)
         if len(ids) / len(ww) > max_subword:  # usually < 1.5. too large means too many unknown words
             return None
 
@@ -357,10 +461,12 @@ def extract_txt(sub, year, tokenizer, overwrite=False, max_subword=3):
                 txt, ids = txt_ids
                 lines.append(f"{d['name']}\t{txt}\t{ids}")
                 m += 1
-                if m % 1e4 == 0:
-                    with open(path_out, "a", encoding="utf-8") as f:
-                        f.write("\n".join(lines) + "\n")
-                    lines = []
+
+            if m > 0 and m % 1e4 == 0:
+                print(f"[{sub}-{date}] Number of lines accepted {m}/{n}")
+                with open(path_out, "a", encoding="utf-8") as f:
+                    f.write("\n".join(lines) + "\n")
+                lines = []
 
     for date in dates:
         path = f"{jsonl_dir}/{sub}/{date}_roots.jsonl"
@@ -379,25 +485,29 @@ def extract_txt(sub, year, tokenizer, overwrite=False, max_subword=3):
                 txt, ids = txt_ids
                 lines.append(f"{d['name']}\t{txt}\t{ids}")
                 m += 1
-                if m % 1e4 == 0:
-                    with open(path_out, "a", encoding="utf-8") as f:
-                        f.write("\n".join(lines) + "\n")
-                    lines = []
+            if m % 1e4 == 0:
+                print(f"[{sub}-{date}] Number of lines accepted {m}/{n}")
+                with open(path_out, "a", encoding="utf-8") as f:
+                    f.write("\n".join(lines) + "\n")
+                lines = []
     if lines:
         with open(path_out, "a", encoding="utf-8") as f:
             f.write("\n".join(lines))
 
-    s = f"[{sub} {year}] txt kept {m}/{n}"
+    s = f"[{sub}-{year}] Number of lines kept {m}/{n}"
     with open(path_done, "w") as f:
         f.write(s)
-    print(s)
+        print(s)
 
 
-def extract_trees(sub, year):
+def extract_trees(sub, year, pos, lock, overwrite=True):
+    print = lambda msg: print_mult_procs(msg, lock, pos)
+    print(f"[{sub}-{year}] Extracting Trees")
+
     dir = f"{redditsub_dir}/{sub}"
     os.makedirs(dir, exist_ok=True)
     path_out = f"{dir}/{year}_trees.pkl"
-    if os.path.exists(path_out):
+    if os.path.exists(path_out) and not overwrite:
         return
 
     trees = dict()
@@ -417,12 +527,15 @@ def extract_trees(sub, year):
     if not trees:
         return
 
-    print(f"[{sub} {year}] {len(trees)} trees {n/len(trees):.1f} nodes/tree")
     os.makedirs(dir, exist_ok=True)
     pickle.dump(trees, open(path_out, "wb"))
+    print(f"[{sub}-{year}] {len(trees)} trees {n/len(trees):.1f} nodes/tree")
 
 
-def extract_time(sub, year, overwrite=False):
+def extract_time(sub, year, pos, lock, overwrite=True):
+    print = lambda msg: print_mult_procs(msg, lock, pos)
+    print(f"[{sub}-{year}] Extracting Time")
+
     dir = f"{redditsub_dir}/{sub}"
     os.makedirs(dir, exist_ok=True)
     path_out = f"{dir}/{year}_time.tsv"
@@ -459,13 +572,16 @@ def extract_time(sub, year, overwrite=False):
     with open(path_out, "a", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
-    s = f"[{sub} {year}] time kept {m}/{n}"
+    s = f"[{sub}-{year}] time kept {m}/{n}"
+    print(s)
     with open(path_done, "w") as f:
         f.write(s)
-    print(s)
 
 
-def calc_feedback(sub, year, overwrite=False):
+def extract_feedback(sub, year, pbar, lock, overwrite=True):
+    print = lambda msg: print_mult_procs(msg, lock, pos)
+    print(f"[{sub}-{year}] Extracting Feedback")
+
     dir = f"{redditsub_dir}/{sub}"
     path_out = f"{dir}/{year}_feedback.tsv"
     path_done = f"{path_out}.done"
@@ -490,13 +606,13 @@ def calc_feedback(sub, year, overwrite=False):
             updown[d["name"]] = d["ups"] - d["downs"]
 
     if not updown:
-        print("empty updown:")
+        print("empty updown")
         return
 
     with open(path_out, "w", encoding="utf-8") as f:
         f.write("\t".join(["#path", "vol", "width", "depth", "updown"]) + "\n")
 
-    print(f"[{sub} {year}] calculating scores for {len(trees)} trees...")
+    print(f"[{sub}-{year}] calculating scores for {len(trees)} trees...")
 
     n_tree = 0
     n_node = 0
@@ -568,15 +684,15 @@ def calc_feedback(sub, year, overwrite=False):
             f.write("\n".join(lines) + "\n")
 
     if n_tree:
-        s = f"[{sub} {year}] {n_tree} tree {n_node} nodes"
+        s = f"[{sub}-{year}] {n_tree} tree {n_node} nodes"
     else:
-        s = f"[{sub} {year}] trees are empty!"
+        s = f"[{sub}-{year}] trees are empty!"
     with open(path_done, "w") as f:
         f.write(s)
-    print(s)
+        print(s)
 
 
-def create_pairs(year, sub, feedback, overwrite=False):
+def create_pairs(year, sub, feedback, overwrite=True):
     dir = f"{redditsub_dir}/{sub}"
     path_out = f"{dir}/{year}_{feedback}.tsv"
     path_done = f"{path_out}.done"
@@ -599,7 +715,7 @@ def create_pairs(year, sub, feedback, overwrite=False):
             time[name] = int(t)
 
     open(path_out, "w", encoding="utf-8")
-    print(f"[{sub} {year}] creating pairs...")
+    print(f"[{sub}-{year}] creating pairs...")
 
     def match_time(replies, cxt):
         scores = sorted(set([score for score, _ in replies]))
@@ -672,7 +788,7 @@ def create_pairs(year, sub, feedback, overwrite=False):
     if replies:
         n_line += match_time(replies, cxt)
 
-    s = f"[{sub} {year} {feedback}] {n_line} pairs"
+    s = f"[{sub}-{year} {feedback}] {n_line} pairs"
     with open(path_done, "w") as f:
         f.write(s)
     print(s)
@@ -704,7 +820,7 @@ def add_seq(sub, year, feedback, overwrite=False):
     print(f"Loaded {len(seq)} seq")
     with open(path_out, "w", encoding="utf-8") as f:
         pass
-    print(f"[{sub} {year} {feedback}] adding seq")
+    print(f"[{sub}-{year} {feedback}] adding seq")
 
     lines = []
     n = 0
@@ -764,14 +880,14 @@ def add_seq(sub, year, feedback, overwrite=False):
     with open(path_out, "a", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
-    s = f"[{sub} {year} {feedback}] pair seq {m}/{n}"
+    s = f"[{sub}-{year} {feedback}] pair seq {m}/{n}"
     with open(path_done, "w") as f:
         f.write(s)
     print(s)
 
 
 def combine_sub(year, feedback, overwrite=False, skip_same_pos=True):
-    dir = f"{output_dir}/{feedback}"
+    dir = f"{output_dir}/{feedback}/{year}"
     os.makedirs(dir, exist_ok=True)
     path_out = f"{dir}/raw.tsv"
     path_done = f"{path_out}.done"
@@ -861,11 +977,11 @@ def split_by_root(path, p_test=0.15):
             f.write("\n".join(datasets[set_]))
 
 
-def shuffle(feedback, part, n_temp=10):
-    dir = f"{output_dir}/{feedback}"
+def shuffle(year, feedback, part, n_temp=10):
+    dir = f"{output_dir}/{feedback}/{year}"
     path = f"{dir}/raw.tsv.{part}"
     path_out = f"{dir}/{part}.tsv"
-    dir_temp = f"{output_dir}/temp/{feedback}"
+    dir_temp = f"{output_dir}/temp/{feedback}/{year}"
 
     print(f"Shuffling {path}...")
     os.makedirs(dir_temp, exist_ok=True)
@@ -916,50 +1032,186 @@ def shuffle(feedback, part, n_temp=10):
 
 
 def get_subs():
-    return ["4chan"]
-    # print("collectiing subs...")
-    # subs = sorted(os.listdir(redditsub_dir))
-    # print("collected %i subs" % len(subs))
-    # return subs
+    # return ["4chan"]
+    tqdm.write("Collectiing subs...")
+    subs = sorted(os.listdir(jsonl_dir))
+    tqdm.write(f"Collected {len(subs)} subs")
+    return subs
 
 
-def build_json(year, is_extracted=False):
-    for date in get_dates(year):
-        extract_rc(date, is_extracted)
-        extract_rs(date, is_extracted)
+def build_json(year, overwrite=True):
+    dates = get_dates(year)
+    if len(dates) == 0:
+        console.print(
+            "[bold red][ERROR]:[/bold red] [yellow]No dates for that year is available. "
+            + "Please check your data/compressed directory"
+        )
+        return False
+
+    # Find and Extract all the zip files for that year
+    RS_files = get_all_files(f"{compressed_dir}", prefix="RS", contains=(str(year),), excludes=("extracted",))
+    RC_files = get_all_files(f"{compressed_dir}", prefix="RC", contains=(str(year),), excludes=("extracted",))
+    extract_list = RS_files + RC_files
+    extract_pos = [i % MAX_PARALLEL_PROCS for i in list(range(len(extract_list)))]
+    extract_to = [f"{os.path.splitext(fpath)[0]}.extracted" for fpath in extract_list]
+    extract_args = list(zip(extract_pos, extract_list, extract_to))
+
+    lock = Manager().Lock()
+    with Pool(MAX_PARALLEL_PROCS) as pool:
+        for pos, fpath, fpath_to in extract_args:
+            _, ext = os.path.splitext(fpath)
+            extract_fn = get_extract_method(ext)
+            pool.apply_async(extract_fn, args=(fpath, fpath_to, pos, overwrite, lock))
+        pool.close()
+        pool.join()
+
+    with Pool(MAX_PARALLEL_PROCS) as pool:
+        for idx, date in enumerate(dates):
+            pos = idx % MAX_PARALLEL_PROCS
+            pool.apply_async(extract_rc, args=(date, pos, lock))
+        pool.close()
+        pool.join()
+
+    with Pool(MAX_PARALLEL_PROCS) as pool:
+        for idx, date in enumerate(dates):
+            pos = idx % MAX_PARALLEL_PROCS
+            pool.apply_async(extract_rs, args=(date, pos, lock))
+        pool.close()
+        pool.join()
+
+    return True
 
 
-def build_basic(year):
+from blessings import Terminal
+
+term = Terminal()
+LINE_UP = "\033[1A"
+LINE_CLEAR = "\033[K"
+
+
+def print_mult_procs(msg, lock, pos):
+    with lock:
+        with term.location(0, term.height - pos - 2):
+            print(end=LINE_CLEAR, flush=True)
+            print(msg, flush=True)
+
+
+def build_basic(year, overwrite=True):
     from transformers19 import GPT2Tokenizer
 
-    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+    tokenizer = GPT2Tokenizer.from_pretrained("gpt2", padding=True, max_length=1024, truncation=True)
     subs = get_subs()
-    for sub in subs:
-        extract_time(sub, year)
-        extract_txt(sub, year, tokenizer)
-        extract_trees(sub, year)
-        calc_feedback(sub, year, overwrite=True)
+    lock = Manager().Lock()
+
+    # pbar_time = tqdm(position=0)
+    # pbar_txt = tqdm(position=1)
+    # pbar_trees = tqdm(position=2)
+    # pbar_feedback = tqdm(position=3)
+    # [p.clear() for p in (pbar_time, pbar_txt, pbar_trees, pbar_feedback)]
+
+    # for sub in subs:
+    #     extract_time(sub, year, pbar_time, lock, overwrite)
+    #     extract_txt(sub, year, pbar_txt, lock, tokenizer, overwrite)
+    #     extract_trees(sub, year, pbar_trees, lock, overwrite)
+    #     extract_feedback(sub, year, pbar_feedback, lock, overwrite)
+
+    print("\n" * (MAX_PARALLEL_PROCS), flush=True)
+
+    with term.location(0, term.height - MAX_PARALLEL_PROCS - 2):
+        print("Extracting Time...")
+    with Pool(MAX_PARALLEL_PROCS) as pool:
+        for idx, sub in enumerate(subs):
+            pool.apply_async(extract_time, args=(sub, year, idx % MAX_PARALLEL_PROCS, lock, overwrite))
+        pool.close()
+        pool.join()
+
+    with term.location(0, term.height - MAX_PARALLEL_PROCS - 2):
+        print(end=LINE_CLEAR, flush=True)
+        print("Extracting Trees...")
+    with Pool(MAX_PARALLEL_PROCS) as pool:
+        for idx, sub in enumerate(subs):
+            pool.apply_async(extract_trees, args=(sub, year, idx % MAX_PARALLEL_PROCS, lock, overwrite))
+        pool.close()
+        pool.join()
+
+    with term.location(0, term.height - MAX_PARALLEL_PROCS - 2):
+        print(end=LINE_CLEAR, flush=True)
+        print("Extracting Feedbacks...")
+    with Pool(MAX_PARALLEL_PROCS) as pool:
+        for idx, sub in enumerate(subs):
+            pool.apply_async(extract_feedback, args=(sub, year, idx % MAX_PARALLEL_PROCS, lock, overwrite))
+        pool.close()
+        pool.join()
+
+    with term.location(0, term.height - MAX_PARALLEL_PROCS - 2):
+        print(end=LINE_CLEAR, flush=True)
+        print("Extracting Texts...")
+    with Pool(MAX_PARALLEL_PROCS) as pool:
+        for idx, sub in enumerate(subs):
+            pool.apply_async(
+                extract_txt, args=(sub, year, idx % MAX_PARALLEL_PROCS, lock, tokenizer, overwrite)
+            )
+        pool.close()
+        pool.join()
 
 
-def build_pairs(year, feedback):
+def build_pairs(year, feedback, overwrite):
     subs = get_subs()
     for sub in subs:
-        create_pairs(year, sub, feedback, overwrite=True)
-        add_seq(sub, year, feedback, overwrite=True)
-    path = combine_sub(year, feedback, overwrite=True)
+        create_pairs(year, sub, feedback, overwrite)
+        add_seq(sub, year, feedback, overwrite)
+    path = combine_sub(year, feedback, overwrite)
     split_by_root(path)
     for part in ["train", "vali"]:
-        shuffle(feedback, part)
+        shuffle(year, feedback, part)
+
+
+def data_preprocess():
+    global root_dir, data_dir, compressed_dir, jsonl_dir, redditsub_dir, output_dir
+    root_dir = os.path.abspath(os.path.normpath(ARGS.root_dir))
+    data_dir = f"{root_dir}/data"
+    compressed_dir = f"{data_dir}/compressed"
+    jsonl_dir = f"{data_dir}/json"
+    redditsub_dir = f"{data_dir}/subs"
+    output_dir = f"{data_dir}/out"
+
+    years = []
+    for y in ARGS.year:
+        if "-" in y:
+            from_y, to_y = y.split("-")
+            years += list(range(from_y, to_y + 1))
+        else:
+            years += [y]
+
+    for year in years:
+        build_json(year, overwrite=True)
+        build_basic(year)
+        # [build_pairs(year, t) for t in ("updown", "depth", "width")]
+
+
+def parse_args():
+    global ARGS
+    parser.add_argument(
+        "-r",
+        "--root-dir",
+        help="the root directory of the project. Default: '.'",
+        type=str,
+        default=".",
+    )
+    parser.add_argument(
+        "-y",
+        "--year",
+        help="the year to be processed. Enter one or multiple years separated by space, or a range %Y-%Y",
+        type=str,
+        nargs="+",
+        required=True,
+    )
+    ARGS = parser.parse_args()
 
 
 def main():
-    year = 2011
-    build_json(year, is_extracted=False)
-    build_basic(year)
-
-    tasks = ["updown", "depth", "width"]
-    for t in tasks:
-        build_pairs(year, t)
+    parse_args()
+    data_preprocess()
 
 
 if __name__ == "__main__":
