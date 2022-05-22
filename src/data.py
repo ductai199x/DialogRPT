@@ -10,11 +10,28 @@ from multiprocessing import Manager, Pool
 import numpy as np
 import rich
 import zstandard
+from blessings import Terminal
 from tqdm.auto import tqdm
 
 parser = ArgumentParser()
 console = rich.get_console()
+term = Terminal()
+LINE_UP = "\033[1A"
+LINE_CLEAR = "\033[K"
 MAX_PARALLEL_PROCS = 8
+TOP_K_TEXTS = 30
+
+
+def print_mult_procs(msg, lock, pos):
+    with lock:
+        with term.location(0, term.height - pos - 2):
+            print(end=LINE_CLEAR, flush=True)
+            print(msg, flush=True)
+
+
+def dump_queue(q):
+    q.put(None)
+    return list(iter(lambda: q.get(timeout=0.00001), None))
 
 
 def get_all_files(path, prefix="", suffix="", contains=("",), excludes=("",)):
@@ -52,13 +69,11 @@ def extract_zst(archive: str, out_path: str, pos: int, overwrite: bool, lock: Ma
     with lock:
         if os.path.exists(out_path) and out_path != os.devnull:
             if os.path.isfile(out_path):
-                if overwrite:
-                    console.print(f"[bold yellow][WARN]:[/bold yellow] {out_path} exists. Overwriting.")
-                else:
-                    console.print(f"[bold yellow][WARN]:[/bold yellow] {out_path} exists. Skipping.")
+                if not overwrite:
+                    tqdm.write(f"[WARN]: {out_path} exists. Skipping.")
                     return
             else:
-                console.print(f"[bold red][ERROR]:[/bold red] {out_path} exists but it's not a file!")
+                tqdm.write(f"[ERROR]: {out_path} exists but it's not a file!")
                 raise FileExistsError
 
     with lock:
@@ -103,13 +118,11 @@ def extract_bz2(archive: str, out_path: str, pos: int, overwrite: bool, lock: Ma
     with lock:
         if os.path.exists(out_path) and out_path != os.devnull:
             if os.path.isfile(out_path):
-                if overwrite:
-                    console.print(f"[bold yellow][WARN]:[/bold yellow] {out_path} exists. Overwriting.")
-                else:
-                    console.print(f"[bold yellow][WARN]:[/bold yellow] {out_path} exists. Skipping.")
+                if not overwrite:
+                    tqdm.write(f"[WARN]: {out_path} exists. Skipping.")
                     return
             else:
-                console.print(f"[bold red][ERROR]:[/bold red] {out_path} exists but it's not a file!")
+                tqdm.write(f"[ERROR]: {out_path} exists but it's not a file!")
                 raise FileExistsError
 
     with lock:
@@ -153,13 +166,11 @@ def extract_xz(archive: str, out_path: str, pos: int, overwrite: bool, lock: Man
     with lock:
         if os.path.exists(out_path) and out_path != os.devnull:
             if os.path.isfile(out_path):
-                if overwrite:
-                    console.print(f"[bold yellow][WARN]:[/bold yellow] {out_path} exists. Overwriting.")
-                else:
-                    console.print(f"[bold yellow][WARN]:[/bold yellow] {out_path} exists. Skipping.")
+                if not overwrite:
+                    tqdm.write(f"[WARN]: {out_path} exists. Skipping.")
                     return
             else:
-                console.print(f"[bold red][ERROR]:[/bold red] {out_path} exists but it's not a file!")
+                tqdm.write(f"[ERROR]: {out_path} exists but it's not a file!")
                 raise FileExistsError
 
     with lock:
@@ -396,9 +407,10 @@ def extract_rs(date, print_pos, lock):
         f.write(f"[{date}] saved {m}/{n}\n")
 
 
-def extract_txt(sub, year, pos, lock, tokenizer, overwrite=True, max_subword=3):
+def extract_txt(sub, year, pos_queue, lock, tokenizer, result_queue, overwrite=True, max_subword=3):
+    pos = pos_queue.get()
     print = lambda msg: print_mult_procs(msg, lock, pos)
-    print(f"[{sub}-{year}] Extracting Texts")
+    print(f"[{sub:<30} {year:<7}] Extracting Texts")
 
     dir = f"{redditsub_dir}/{sub}"
     os.makedirs(dir, exist_ok=True)
@@ -463,7 +475,7 @@ def extract_txt(sub, year, pos, lock, tokenizer, overwrite=True, max_subword=3):
                 m += 1
 
             if m > 0 and m % 1e4 == 0:
-                print(f"[{sub}-{date}] Number of lines accepted {m}/{n}")
+                print(f"[{sub:<30} {date}] Number of lines accepted {m}/{n}")
                 with open(path_out, "a", encoding="utf-8") as f:
                     f.write("\n".join(lines) + "\n")
                 lines = []
@@ -486,7 +498,7 @@ def extract_txt(sub, year, pos, lock, tokenizer, overwrite=True, max_subword=3):
                 lines.append(f"{d['name']}\t{txt}\t{ids}")
                 m += 1
             if m % 1e4 == 0:
-                print(f"[{sub}-{date}] Number of lines accepted {m}/{n}")
+                print(f"[{sub:<30} {date}] Number of lines accepted {m}/{n}")
                 with open(path_out, "a", encoding="utf-8") as f:
                     f.write("\n".join(lines) + "\n")
                 lines = []
@@ -494,13 +506,16 @@ def extract_txt(sub, year, pos, lock, tokenizer, overwrite=True, max_subword=3):
         with open(path_out, "a", encoding="utf-8") as f:
             f.write("\n".join(lines))
 
-    s = f"[{sub}-{year}] Number of lines kept {m}/{n}"
+    s = f"[{sub:<30} {year:<7}] Number of lines accepted {m}/{n}"
     with open(path_done, "w") as f:
         f.write(s)
         print(s)
+        result_queue.append((sub, m))
+        pos_queue.put(pos)
 
 
-def extract_trees(sub, year, pos, lock, overwrite=True):
+def extract_trees(sub, year, pos_queue, lock, overwrite=True):
+    pos = pos_queue.get()
     print = lambda msg: print_mult_procs(msg, lock, pos)
     print(f"[{sub}-{year}] Extracting Trees")
 
@@ -530,9 +545,11 @@ def extract_trees(sub, year, pos, lock, overwrite=True):
     os.makedirs(dir, exist_ok=True)
     pickle.dump(trees, open(path_out, "wb"))
     print(f"[{sub}-{year}] {len(trees)} trees {n/len(trees):.1f} nodes/tree")
+    pos_queue.put(pos)
 
 
-def extract_time(sub, year, pos, lock, overwrite=True):
+def extract_time(sub, year, pos_queue, lock, overwrite=True):
+    pos = pos_queue.get()
     print = lambda msg: print_mult_procs(msg, lock, pos)
     print(f"[{sub}-{year}] Extracting Time")
 
@@ -573,12 +590,14 @@ def extract_time(sub, year, pos, lock, overwrite=True):
         f.write("\n".join(lines))
 
     s = f"[{sub}-{year}] time kept {m}/{n}"
-    print(s)
     with open(path_done, "w") as f:
         f.write(s)
+        print(s)
+        pos_queue.put(pos)
 
 
-def extract_feedback(sub, year, pbar, lock, overwrite=True):
+def extract_feedback(sub, year, pos_queue, lock, overwrite=True):
+    pos = pos_queue.get()
     print = lambda msg: print_mult_procs(msg, lock, pos)
     print(f"[{sub}-{year}] Extracting Feedback")
 
@@ -690,6 +709,7 @@ def extract_feedback(sub, year, pbar, lock, overwrite=True):
     with open(path_done, "w") as f:
         f.write(s)
         print(s)
+        pos_queue.put(pos)
 
 
 def create_pairs(year, sub, feedback, overwrite=True):
@@ -1043,7 +1063,7 @@ def build_json(year, overwrite=True):
     dates = get_dates(year)
     if len(dates) == 0:
         console.print(
-            "[bold red][ERROR]:[/bold red] [yellow]No dates for that year is available. "
+            "[ERROR]: [yellow]No dates for that year is available. "
             + "Please check your data/compressed directory"
         )
         return False
@@ -1082,46 +1102,51 @@ def build_json(year, overwrite=True):
     return True
 
 
-from blessings import Terminal
-
-term = Terminal()
-LINE_UP = "\033[1A"
-LINE_CLEAR = "\033[K"
-
-
-def print_mult_procs(msg, lock, pos):
-    with lock:
-        with term.location(0, term.height - pos - 2):
-            print(end=LINE_CLEAR, flush=True)
-            print(msg, flush=True)
-
-
 def build_basic(year, overwrite=True):
+    top_k_subs_fpath = f"{redditsub_dir}/top_k_list.csv"
+    if os.path.exists(top_k_subs_fpath) and os.path.isfile(top_k_subs_fpath) and not overwrite:
+        with open(top_k_subs_fpath, "r") as f:
+            lines = f.readlines()
+            if len(lines) == TOP_K_TEXTS:
+                top_k_subs = [line.split(",")[0] for line in lines]
+                return top_k_subs
+
     from transformers19 import GPT2Tokenizer
 
     tokenizer = GPT2Tokenizer.from_pretrained("gpt2", padding=True, max_length=1024, truncation=True)
     subs = get_subs()
     lock = Manager().Lock()
-
-    # pbar_time = tqdm(position=0)
-    # pbar_txt = tqdm(position=1)
-    # pbar_trees = tqdm(position=2)
-    # pbar_feedback = tqdm(position=3)
-    # [p.clear() for p in (pbar_time, pbar_txt, pbar_trees, pbar_feedback)]
-
-    # for sub in subs:
-    #     extract_time(sub, year, pbar_time, lock, overwrite)
-    #     extract_txt(sub, year, pbar_txt, lock, tokenizer, overwrite)
-    #     extract_trees(sub, year, pbar_trees, lock, overwrite)
-    #     extract_feedback(sub, year, pbar_feedback, lock, overwrite)
+    result_queue = Manager().list()
+    print_pos_queue = Manager().Queue(maxsize=MAX_PARALLEL_PROCS)
+    [print_pos_queue.put(i) for i in range(MAX_PARALLEL_PROCS)]
 
     print("\n" * (MAX_PARALLEL_PROCS), flush=True)
 
     with term.location(0, term.height - MAX_PARALLEL_PROCS - 2):
+        print(end=LINE_CLEAR, flush=True)
+        print(f"Extracting Texts (Truncate to top only {TOP_K_TEXTS})...")
+    with Pool(MAX_PARALLEL_PROCS) as pool:
+        for sub in subs:
+            pool.apply_async(
+                extract_txt, args=(sub, year, print_pos_queue, lock, tokenizer, result_queue, overwrite)
+            )
+        pool.close()
+        pool.join()
+
+    subs_txt_result_queue = list(result_queue)
+    subs_txt_result_queue = sorted(subs_txt_result_queue, reverse=True, key=lambda x: x[1])[:TOP_K_TEXTS]
+
+    with open(top_k_subs_fpath, "w") as f:
+        f.write("\n".join([",".join(map(str, i)) for i in subs_txt_result_queue]))
+
+    top_k_subs = [s for s, _ in subs_txt_result_queue]
+
+    with term.location(0, term.height - MAX_PARALLEL_PROCS - 2):
+        print(end=LINE_CLEAR, flush=True)
         print("Extracting Time...")
     with Pool(MAX_PARALLEL_PROCS) as pool:
-        for idx, sub in enumerate(subs):
-            pool.apply_async(extract_time, args=(sub, year, idx % MAX_PARALLEL_PROCS, lock, overwrite))
+        for sub in top_k_subs:
+            pool.apply_async(extract_time, args=(sub, year, print_pos_queue, lock, overwrite))
         pool.close()
         pool.join()
 
@@ -1129,8 +1154,8 @@ def build_basic(year, overwrite=True):
         print(end=LINE_CLEAR, flush=True)
         print("Extracting Trees...")
     with Pool(MAX_PARALLEL_PROCS) as pool:
-        for idx, sub in enumerate(subs):
-            pool.apply_async(extract_trees, args=(sub, year, idx % MAX_PARALLEL_PROCS, lock, overwrite))
+        for sub in top_k_subs:
+            pool.apply_async(extract_trees, args=(sub, year, print_pos_queue, lock, overwrite))
         pool.close()
         pool.join()
 
@@ -1138,25 +1163,15 @@ def build_basic(year, overwrite=True):
         print(end=LINE_CLEAR, flush=True)
         print("Extracting Feedbacks...")
     with Pool(MAX_PARALLEL_PROCS) as pool:
-        for idx, sub in enumerate(subs):
-            pool.apply_async(extract_feedback, args=(sub, year, idx % MAX_PARALLEL_PROCS, lock, overwrite))
+        for sub in top_k_subs:
+            pool.apply_async(extract_feedback, args=(sub, year, print_pos_queue, lock, overwrite))
         pool.close()
         pool.join()
 
-    with term.location(0, term.height - MAX_PARALLEL_PROCS - 2):
-        print(end=LINE_CLEAR, flush=True)
-        print("Extracting Texts...")
-    with Pool(MAX_PARALLEL_PROCS) as pool:
-        for idx, sub in enumerate(subs):
-            pool.apply_async(
-                extract_txt, args=(sub, year, idx % MAX_PARALLEL_PROCS, lock, tokenizer, overwrite)
-            )
-        pool.close()
-        pool.join()
+    return top_k_subs
 
 
-def build_pairs(year, feedback, overwrite):
-    subs = get_subs()
+def build_pairs(year, subs, feedback, overwrite):
     for sub in subs:
         create_pairs(year, sub, feedback, overwrite)
         add_seq(sub, year, feedback, overwrite)
@@ -1184,9 +1199,10 @@ def data_preprocess():
             years += [y]
 
     for year in years:
-        build_json(year, overwrite=True)
-        build_basic(year)
-        # [build_pairs(year, t) for t in ("updown", "depth", "width")]
+        # build_status = build_json(year, overwrite=False)
+        top_k_subs = build_basic(year, overwrite=True)
+        print(f"Building pairs for these {TOP_K_TEXTS} subs: {top_k_subs}")
+        # [build_pairs(year, top_k_subs, fb, overwrite=True) for fb in ("updown", "depth", "width")]
 
 
 def parse_args():
