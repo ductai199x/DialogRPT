@@ -12,6 +12,7 @@ import rich
 import zstandard
 from blessings import Terminal
 from tqdm.auto import tqdm
+from nsfw_words import nsfw_words
 
 parser = ArgumentParser()
 console = rich.get_console()
@@ -19,7 +20,7 @@ term = Terminal()
 LINE_UP = "\033[1A"
 LINE_CLEAR = "\033[K"
 MAX_PARALLEL_PROCS = 8
-TOP_K_TEXTS = 30
+TOP_K_TEXTS = 50
 
 
 def print_mult_procs(msg, lock, pos):
@@ -223,6 +224,10 @@ def valid_sub(sub):
         return False
     if ":" in sub:
         return False
+    if len([e for e in nsfw_words if e in sub.lower()]) > 0:
+        return False
+    # for ss in nsfw_words:
+    #     if ss in sub.lower(): return False
     return True
 
 
@@ -1199,7 +1204,9 @@ def data_preprocess():
             years += [y]
 
     for year in years:
-        # build_status = build_json(year, overwrite=False)
+        build_status = build_json(year, overwrite=False)
+        if not build_status:
+            continue
         top_k_subs = build_basic(year, overwrite=True)
         print(f"Building pairs for these {TOP_K_TEXTS} subs: {top_k_subs}")
         # [build_pairs(year, top_k_subs, fb, overwrite=True) for fb in ("updown", "depth", "width")]
