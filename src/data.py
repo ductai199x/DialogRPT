@@ -5,6 +5,7 @@ import os
 import pickle
 import time
 from argparse import ArgumentParser
+from transformers19 import GPT2Tokenizer
 from multiprocessing import Manager, Pool
 
 import numpy as np
@@ -12,6 +13,7 @@ import rich
 import zstandard
 from blessings import Terminal
 from tqdm.auto import tqdm
+
 from nsfw_words import nsfw_words
 
 parser = ArgumentParser()
@@ -19,7 +21,8 @@ console = rich.get_console()
 term = Terminal()
 LINE_UP = "\033[1A"
 LINE_CLEAR = "\033[K"
-MAX_PARALLEL_PROCS = 8
+ERASE_AND_BEGIN_LINE = "\033[2K\033[1G"
+MAX_PARALLEL_PROCS = 6
 TOP_K_TEXTS = 50
 
 
@@ -28,6 +31,12 @@ def print_mult_procs(msg, lock, pos):
         with term.location(0, term.height - pos - 2):
             print(end=LINE_CLEAR, flush=True)
             print(msg, flush=True)
+
+
+def print_same_line(msg):
+    with term.location(0, term.height - 2):
+        print(end=LINE_CLEAR, flush=True)
+        print(msg, flush=True)
 
 
 def dump_queue(q):
@@ -284,9 +293,8 @@ def extract_rc(date, print_pos, lock):
     with open(extracted_path, "r", encoding="utf-8") as extracted_file:
         with lock:
             pbar = tqdm(
-                total=sum(1 for l in open(extracted_path)),
                 position=print_pos,
-                ncols=120,
+                ncols=100,
                 leave=False,
             )
         for line in extracted_file:
@@ -315,7 +323,7 @@ def extract_rc(date, print_pos, lock):
             edges[node["subreddit"]].append(f"{node['link_id']}\t{node['parent_id']}\t{node['name']}")
 
             m += 1
-            if m % 2e4 == 0:
+            if m % 1e5 == 0:
                 save(nodes, edges)
                 nodes = dict()
                 edges = dict()
@@ -323,7 +331,7 @@ def extract_rc(date, print_pos, lock):
                     pbar.set_postfix_str(
                         f"[RC_{date}] saved {m/1e6:.2f}/{n/1e6:.2f} M, {len(subs)} subreddits"
                     )
-                    pbar.update(2e4)
+                    pbar.update(1e5)
 
     save(nodes, edges)
     with lock:
@@ -362,9 +370,8 @@ def extract_rs(date, print_pos, lock):
     with open(extracted_path, "r", encoding="utf-8") as extracted_file:
         with lock:
             pbar = tqdm(
-                total=sum(1 for l in open(extracted_path)),
                 position=print_pos,
-                ncols=120,
+                ncols=100,
                 leave=False,
             )
         for line in extracted_file:
@@ -394,14 +401,14 @@ def extract_rs(date, print_pos, lock):
             roots[root["subreddit"]].append(line)
 
             m += 1
-            if m % 2e4 == 0:
+            if m % 4e4 == 0:
                 save(roots)
                 roots = dict()
                 with lock:
                     pbar.set_postfix_str(
                         f"[RS_{date}] saved {m/1e6:.2f}/{n/1e6:.2f} M, {len(subs)} subreddits"
                     )
-                    pbar.update(2e4)
+                    pbar.update(4e4)
     save(roots)
     with lock:
         pbar.clear()
@@ -522,7 +529,7 @@ def extract_txt(sub, year, pos_queue, lock, tokenizer, result_queue, overwrite=T
 def extract_trees(sub, year, pos_queue, lock, overwrite=True):
     pos = pos_queue.get()
     print = lambda msg: print_mult_procs(msg, lock, pos)
-    print(f"[{sub}-{year}] Extracting Trees")
+    print(f"[{sub:<30} {year:<7}] Extracting Trees")
 
     dir = f"{redditsub_dir}/{sub}"
     os.makedirs(dir, exist_ok=True)
@@ -544,19 +551,22 @@ def extract_trees(sub, year, pos_queue, lock, overwrite=True):
                 trees[link] = dict()
             trees[link][(parent, child)] = date
 
+            if n % 1e4 == 0:
+                print(f"[{sub:<30} {date}] {len(trees)} trees {n/len(trees):.1f} nodes/tree")
+
     if not trees:
         return
 
     os.makedirs(dir, exist_ok=True)
     pickle.dump(trees, open(path_out, "wb"))
-    print(f"[{sub}-{year}] {len(trees)} trees {n/len(trees):.1f} nodes/tree")
+    print(f"[{sub:<30} {year:<7}] {len(trees)} trees {n/len(trees):.1f} nodes/tree")
     pos_queue.put(pos)
 
 
 def extract_time(sub, year, pos_queue, lock, overwrite=True):
     pos = pos_queue.get()
     print = lambda msg: print_mult_procs(msg, lock, pos)
-    print(f"[{sub}-{year}] Extracting Time")
+    print(f"[{sub:<30} {year:<7}] Extracting Time")
 
     dir = f"{redditsub_dir}/{sub}"
     os.makedirs(dir, exist_ok=True)
@@ -588,13 +598,14 @@ def extract_time(sub, year, pos_queue, lock, overwrite=True):
             lines.append(f"{d['name']}\t{t}")
             m += 1
             if m % 1e4 == 0:
+                print(f"[{sub:<30} {year:<7}] time kept {m}/{n}")
                 with open(path_out, "a", encoding="utf-8") as f:
                     f.write("\n".join(lines) + "\n")
                 lines = []
     with open(path_out, "a", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
-    s = f"[{sub}-{year}] time kept {m}/{n}"
+    s = f"[{sub:<30} {year:<7}] time kept {m}/{n}"
     with open(path_done, "w") as f:
         f.write(s)
         print(s)
@@ -604,7 +615,7 @@ def extract_time(sub, year, pos_queue, lock, overwrite=True):
 def extract_feedback(sub, year, pos_queue, lock, overwrite=True):
     pos = pos_queue.get()
     print = lambda msg: print_mult_procs(msg, lock, pos)
-    print(f"[{sub}-{year}] Extracting Feedback")
+    print(f"[{sub:<30} {year:<7}] Extracting Feedback")
 
     dir = f"{redditsub_dir}/{sub}"
     path_out = f"{dir}/{year}_feedback.tsv"
@@ -636,7 +647,7 @@ def extract_feedback(sub, year, pos_queue, lock, overwrite=True):
     with open(path_out, "w", encoding="utf-8") as f:
         f.write("\t".join(["#path", "vol", "width", "depth", "updown"]) + "\n")
 
-    print(f"[{sub}-{year}] calculating scores for {len(trees)} trees...")
+    print(f"[{sub:<30} {year:<7}] calculating scores for {len(trees)} trees...")
 
     n_tree = 0
     n_node = 0
@@ -704,20 +715,26 @@ def extract_feedback(sub, year, pos_queue, lock, overwrite=True):
                     updown[node],  # updown:   `upvotes - downvotes` of this node
                 )
             )
+        if n_tree % 1e4 == 0:
+            print(f"[{sub:<30} {year:<7}] processing {n_tree}/{len(trees)} trees, {n_node} nodes")
         with open(path_out, "a", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
 
     if n_tree:
-        s = f"[{sub}-{year}] {n_tree} tree {n_node} nodes"
+        s = f"[{sub:<30} {year:<7}] {n_tree} tree {n_node} nodes"
     else:
-        s = f"[{sub}-{year}] trees are empty!"
+        s = f"[{sub:<30} {year:<7}] trees are empty!"
     with open(path_done, "w") as f:
         f.write(s)
         print(s)
         pos_queue.put(pos)
 
 
-def create_pairs(year, sub, feedback, overwrite=True):
+def create_pairs(sub, year, feedback, pos_queue, lock, overwrite=True):
+    pos = pos_queue.get()
+    print = lambda msg: print_mult_procs(msg, lock, pos)
+    print(f"[{sub:<30} {year:<7}] Creating Pairs")
+
     dir = f"{redditsub_dir}/{sub}"
     path_out = f"{dir}/{year}_{feedback}.tsv"
     path_done = f"{path_out}.done"
@@ -740,7 +757,6 @@ def create_pairs(year, sub, feedback, overwrite=True):
             time[name] = int(t)
 
     open(path_out, "w", encoding="utf-8")
-    print(f"[{sub}-{year}] creating pairs...")
 
     def match_time(replies, cxt):
         scores = sorted(set([score for score, _ in replies]))
@@ -810,16 +826,25 @@ def create_pairs(year, sub, feedback, overwrite=True):
             cxt = " ".join(turns[:-1])
             prev = parent
             replies = [(score, reply)]
+
+        if n_line % 1e4 == 0:
+            print(f"[{sub:<30} {year:<7}] Processed {feedback} with {n_line} pairs")
+        
     if replies:
         n_line += match_time(replies, cxt)
 
-    s = f"[{sub}-{year} {feedback}] {n_line} pairs"
+    s = f"[{sub:<30} {year:<7}] Has {feedback} of {n_line} pairs"
     with open(path_done, "w") as f:
         f.write(s)
-    print(s)
+        print(s)
+        pos_queue.put(pos)
 
 
-def add_seq(sub, year, feedback, overwrite=False):
+def add_seq(sub, year, feedback, pos_queue, lock, overwrite=False):
+    pos = pos_queue.get()
+    print = lambda msg: print_mult_procs(msg, lock, pos)
+    print(f"[{sub:<30} {year:<7}] Adding sequence for {feedback}")
+
     fname = f"{year}_{feedback}"
     dir = f"{redditsub_dir}/{sub}"
     turn_sep = " 50256 "
@@ -842,10 +867,9 @@ def add_seq(sub, year, feedback, overwrite=False):
         name, txt, ids = ss
         seq[name] = ids
 
-    print(f"Loaded {len(seq)} seq")
+    print(f"[{sub:<30} {year:<7}] Loaded {len(seq)} seq")
     with open(path_out, "w", encoding="utf-8") as f:
         pass
-    print(f"[{sub}-{year} {feedback}] adding seq")
 
     lines = []
     n = 0
@@ -898,6 +922,7 @@ def add_seq(sub, year, feedback, overwrite=False):
         )
         m += 1
         if m % 1e4 == 0:
+            print(f"[{sub:<30} {year:<7}] Processed {feedback} pair seqs {m}/{n}")
             with open(path_out, "a", encoding="utf-8") as f:
                 f.write("\n".join(lines) + "\n")
             lines = []
@@ -905,13 +930,16 @@ def add_seq(sub, year, feedback, overwrite=False):
     with open(path_out, "a", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
-    s = f"[{sub}-{year} {feedback}] pair seq {m}/{n}"
+    s = f"[{sub:<30} {year:<7}] Has {feedback} pair seqs {m}/{n}"
     with open(path_done, "w") as f:
         f.write(s)
-    print(s)
+        print(s)
+        pos_queue.put(pos)
 
 
 def combine_sub(year, feedback, overwrite=False, skip_same_pos=True):
+    print_same_line(f"[{year} {feedback:<7}] Combining subs")
+
     dir = f"{output_dir}/{feedback}/{year}"
     os.makedirs(dir, exist_ok=True)
     path_out = f"{dir}/raw.tsv"
@@ -943,8 +971,8 @@ def combine_sub(year, feedback, overwrite=False, skip_same_pos=True):
                 with open(path_out, "a", encoding="utf-8") as f:
                     f.write("\n".join(lines) + "\n")
                 lines = []
-                print(
-                    f"[{year} {feedback}] saved {n/1e6:.2f} M lines from {non_empty_subreddits+1} subreddits, now is {sub}"
+                print_same_line(
+                    f"[{year} {feedback:<7}] saved {n/1e6:.2f} M lines from {non_empty_subreddits+1} subreddits"
                 )
         if not empty:
             non_empty_subreddits += 1
@@ -952,14 +980,14 @@ def combine_sub(year, feedback, overwrite=False, skip_same_pos=True):
     with open(path_out, "a", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
-    s = f"[{year} {feedback}] saved {n/1e6:.2f} M lines from {non_empty_subreddits} subreddits"
+    s = f"[{year} {feedback:<7}] saved {n/1e6:.2f} M lines from {non_empty_subreddits} subreddits"
     with open(path_done, "w") as f:
         f.write(s)
-    print(s)
+        print_same_line(s)
     return path_out
 
 
-def split_by_root(path, p_test=0.15):
+def split_by_root(path, p_test=0.10):
     print(f"Spliting by root path: {path}, Test vs. Val ratio: {1-p_test}-{p_test}")
     datasets = {
         "train": [],
@@ -1008,7 +1036,8 @@ def shuffle(year, feedback, part, n_temp=10):
     path_out = f"{dir}/{part}.tsv"
     dir_temp = f"{output_dir}/temp/{feedback}/{year}"
 
-    print(f"Shuffling {path}...")
+    print(f"[{year} {feedback:<7}] Shuffling {path}...")
+
     os.makedirs(dir_temp, exist_ok=True)
     lines = [[] for _ in range(n_temp)]
 
@@ -1029,7 +1058,7 @@ def shuffle(year, feedback, part, n_temp=10):
         count[bucket] += 1
         n += 1
         if n % 1e6 == 0:
-            print(f"read {n/1e6:.2f} M")
+            print_same_line(f"read {n/1e6:.2f} M")
             for i in range(n_temp):
                 if len(lines[i]) == 0:
                     continue
@@ -1052,7 +1081,7 @@ def shuffle(year, feedback, part, n_temp=10):
             f.write("\n".join([lines[j].strip("\n") for j in jj]) + "\n")
         os.remove(f"{dir_temp}/temp{i}")
 
-    print(f"Done with {path}. Cleaning up.")
+    print(f"[{year} {feedback:<7}] Done with {path}. Cleaning up.")
     os.removedirs(f"{dir_temp}")
 
 
@@ -1090,16 +1119,17 @@ def build_json(year, overwrite=True):
         pool.close()
         pool.join()
 
-    with Pool(MAX_PARALLEL_PROCS) as pool:
+    n_processes = 5 # seems to be slower if > 5
+    with Pool(n_processes) as pool:
         for idx, date in enumerate(dates):
-            pos = idx % MAX_PARALLEL_PROCS
+            pos = idx % n_processes
             pool.apply_async(extract_rc, args=(date, pos, lock))
         pool.close()
         pool.join()
 
-    with Pool(MAX_PARALLEL_PROCS) as pool:
+    with Pool(n_processes) as pool:
         for idx, date in enumerate(dates):
-            pos = idx % MAX_PARALLEL_PROCS
+            pos = idx % n_processes
             pool.apply_async(extract_rs, args=(date, pos, lock))
         pool.close()
         pool.join()
@@ -1108,50 +1138,50 @@ def build_json(year, overwrite=True):
 
 
 def build_basic(year, overwrite=True):
-    top_k_subs_fpath = f"{redditsub_dir}/top_k_list.csv"
-    if os.path.exists(top_k_subs_fpath) and os.path.isfile(top_k_subs_fpath) and not overwrite:
+    top_k_subs_fpath = f"{redditsub_dir}/{year}_top_k_list.csv"
+    top_k_subs_defined = False
+    if os.path.exists(top_k_subs_fpath) and os.path.isfile(top_k_subs_fpath):
         with open(top_k_subs_fpath, "r") as f:
             lines = f.readlines()
             if len(lines) == TOP_K_TEXTS:
                 top_k_subs = [line.split(",")[0] for line in lines]
-                return top_k_subs
+                top_k_subs_defined = True
 
-    from transformers19 import GPT2Tokenizer
-
-    tokenizer = GPT2Tokenizer.from_pretrained("gpt2", padding=True, max_length=1024, truncation=True)
-    subs = get_subs()
     lock = Manager().Lock()
-    result_queue = Manager().list()
     print_pos_queue = Manager().Queue(maxsize=MAX_PARALLEL_PROCS)
     [print_pos_queue.put(i) for i in range(MAX_PARALLEL_PROCS)]
 
-    print("\n" * (MAX_PARALLEL_PROCS), flush=True)
+    if not top_k_subs_defined or overwrite:
+        tokenizer = GPT2Tokenizer.from_pretrained("gpt2", padding=True, max_length=1024, truncation=True)
+        subs = get_subs()
+        result_queue = Manager().list()
+        print("\n" * (MAX_PARALLEL_PROCS), flush=True)
+        with term.location(0, term.height - MAX_PARALLEL_PROCS - 2):
+            print(end=LINE_CLEAR, flush=True)
+            print(f"Extracting Texts (Truncate to top only {TOP_K_TEXTS})...")
+        with Pool(MAX_PARALLEL_PROCS) as pool:
+            for sub in subs:
+                pool.apply_async(
+                    extract_txt, args=(sub, year, print_pos_queue, lock, tokenizer, result_queue, overwrite)
+                )
+            pool.close()
+            pool.join()
 
-    with term.location(0, term.height - MAX_PARALLEL_PROCS - 2):
-        print(end=LINE_CLEAR, flush=True)
-        print(f"Extracting Texts (Truncate to top only {TOP_K_TEXTS})...")
-    with Pool(MAX_PARALLEL_PROCS) as pool:
-        for sub in subs:
-            pool.apply_async(
-                extract_txt, args=(sub, year, print_pos_queue, lock, tokenizer, result_queue, overwrite)
-            )
-        pool.close()
-        pool.join()
-
-    subs_txt_result_queue = list(result_queue)
-    subs_txt_result_queue = sorted(subs_txt_result_queue, reverse=True, key=lambda x: x[1])[:TOP_K_TEXTS]
-
-    with open(top_k_subs_fpath, "w") as f:
-        f.write("\n".join([",".join(map(str, i)) for i in subs_txt_result_queue]))
-
-    top_k_subs = [s for s, _ in subs_txt_result_queue]
+        subs_txt_result_queue = list(result_queue)
+        subs_txt_result_queue = sorted(subs_txt_result_queue, reverse=True, key=lambda x: x[1])[:TOP_K_TEXTS]
+        top_k_subs = [s for s, _ in subs_txt_result_queue]
+        with open(top_k_subs_fpath, "w") as f:
+            f.write("\n".join([",".join(map(str, i)) for i in subs_txt_result_queue]))
+    else:
+        print(f"Skipping Extracting Texts for year {year}..\n")
+        print("\n" * (MAX_PARALLEL_PROCS), flush=True)
 
     with term.location(0, term.height - MAX_PARALLEL_PROCS - 2):
         print(end=LINE_CLEAR, flush=True)
         print("Extracting Time...")
     with Pool(MAX_PARALLEL_PROCS) as pool:
         for sub in top_k_subs:
-            pool.apply_async(extract_time, args=(sub, year, print_pos_queue, lock, overwrite))
+            pool.apply_async(extract_time, args=(sub, year, print_pos_queue, lock, True))
         pool.close()
         pool.join()
 
@@ -1160,7 +1190,7 @@ def build_basic(year, overwrite=True):
         print("Extracting Trees...")
     with Pool(MAX_PARALLEL_PROCS) as pool:
         for sub in top_k_subs:
-            pool.apply_async(extract_trees, args=(sub, year, print_pos_queue, lock, overwrite))
+            pool.apply_async(extract_trees, args=(sub, year, print_pos_queue, lock, True))
         pool.close()
         pool.join()
 
@@ -1169,19 +1199,54 @@ def build_basic(year, overwrite=True):
         print("Extracting Feedbacks...")
     with Pool(MAX_PARALLEL_PROCS) as pool:
         for sub in top_k_subs:
-            pool.apply_async(extract_feedback, args=(sub, year, print_pos_queue, lock, overwrite))
+            pool.apply_async(extract_feedback, args=(sub, year, print_pos_queue, lock, True))
         pool.close()
         pool.join()
 
     return top_k_subs
 
 
-def build_pairs(year, subs, feedback, overwrite):
-    for sub in subs:
-        create_pairs(year, sub, feedback, overwrite)
-        add_seq(sub, year, feedback, overwrite)
+def build_pairs(year, top_k_subs, feedback, val_train_ratio=0.1, overwrite=True):
+    if top_k_subs is None: # Then find it, if not found the file, the error
+        top_k_subs_fpath = f"{redditsub_dir}/{year}_top_k_list.csv"
+        if os.path.exists(top_k_subs_fpath) and os.path.isfile(top_k_subs_fpath):
+            with open(top_k_subs_fpath, "r") as f:
+                lines = f.readlines()
+                if len(lines) == TOP_K_TEXTS:
+                    top_k_subs = [line.split(",")[0] for line in lines]
+                else:
+                    raise Exception(
+                        f"{top_k_subs_fpath} exists but empty or incomplete content "
+                        + f"{len(lines)} not equal {TOP_K_TEXTS}!"
+                    )
+        else:
+            raise FileNotFoundError(f"{top_k_subs_fpath} not found!")
+
+    lock = Manager().Lock()
+    print_pos_queue = Manager().Queue(maxsize=MAX_PARALLEL_PROCS)
+    [print_pos_queue.put(i) for i in range(MAX_PARALLEL_PROCS)]
+    print("\n" * (MAX_PARALLEL_PROCS), flush=True)
+
+    with term.location(0, term.height - MAX_PARALLEL_PROCS - 2):
+        print(end=LINE_CLEAR, flush=True)
+        print("Creating Pairs...")
+    with Pool(MAX_PARALLEL_PROCS) as pool:
+        for sub in top_k_subs:
+            pool.apply_async(create_pairs, args=(sub, year, feedback, print_pos_queue, lock, overwrite))
+        pool.close()
+        pool.join()
+
+    with term.location(0, term.height - MAX_PARALLEL_PROCS - 2):
+        print(end=LINE_CLEAR, flush=True)
+        print("Adding sequences...")
+    with Pool(MAX_PARALLEL_PROCS) as pool:
+        for sub in top_k_subs:
+            pool.apply_async(add_seq, args=(sub, year, feedback, print_pos_queue, lock, overwrite))
+        pool.close()
+        pool.join()
+    
     path = combine_sub(year, feedback, overwrite)
-    split_by_root(path)
+    split_by_root(path, p_test=val_train_ratio)
     for part in ["train", "vali"]:
         shuffle(year, feedback, part)
 
@@ -1203,13 +1268,17 @@ def data_preprocess():
         else:
             years += [y]
 
+    top_k_subs = None
     for year in years:
-        build_status = build_json(year, overwrite=False)
-        if not build_status:
-            continue
-        top_k_subs = build_basic(year, overwrite=True)
-        print(f"Building pairs for these {TOP_K_TEXTS} subs: {top_k_subs}")
-        # [build_pairs(year, top_k_subs, fb, overwrite=True) for fb in ("updown", "depth", "width")]
+        if ARGS.build_json:
+            build_status = build_json(year, overwrite=True)
+            if not build_status:
+                continue
+        if ARGS.build_basic:
+            top_k_subs = build_basic(year, overwrite=True)
+            print(f"Building pairs for these {TOP_K_TEXTS} subs: {top_k_subs}")
+        if ARGS.build_pairs:
+            [build_pairs(year, top_k_subs, fb, ARGS.val_train_ratio, overwrite=True) for fb in ("updown", "depth", "width")]
 
 
 def parse_args():
@@ -1228,6 +1297,35 @@ def parse_args():
         type=str,
         nargs="+",
         required=True,
+    )
+    parser.add_argument(
+        "-j",
+        "--build-json",
+        help="flag to build jsons for each subreddit",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "-b",
+        "--build-basic",
+        help="flag to build basic information for each subreddit",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "-p",
+        "--build-pairs",
+        help="flag to build training/validating pairs for each "
+            + "subreddit then aggregate for each year specified",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--val-train-ratio",
+        required="--build-pairs",
+        help="val/train ratio",
+        type=float,
+        default=0.1,
     )
     ARGS = parser.parse_args()
 
