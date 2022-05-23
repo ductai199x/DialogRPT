@@ -129,14 +129,14 @@ def parse_args():
     group.add_argument(
         "-f",
         "--from-to",
-        help="the year and month to download FROM and TO. Format: %Y-%m",
+        help="the year and month to download FROM and TO. Format: %%Y-%%m",
         type=str,
         nargs=2,
     )
     group.add_argument(
         "-d",
         "--date-list",
-        help="List of dates (as %Y-%m) to download.",
+        help="List of dates (as %%Y-%%m) to download.",
         type=str,
         nargs="+",
     )

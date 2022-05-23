@@ -1286,14 +1286,14 @@ def parse_args():
     parser.add_argument(
         "-r",
         "--root-dir",
-        help="the root directory of the project. Default: '.'",
+        help="the root directory of the project. Default='.'",
         type=str,
         default=".",
     )
     parser.add_argument(
         "-y",
         "--year",
-        help="the year to be processed. Enter one or multiple years separated by space, or a range %Y-%Y",
+        help="the year to be processed. Enter one or multiple years separated by space, or a range %%Y-%%Y",
         type=str,
         nargs="+",
         required=True,
@@ -1301,14 +1301,14 @@ def parse_args():
     parser.add_argument(
         "-j",
         "--build-json",
-        help="flag to build jsons for each subreddit",
+        help="flag to build jsons for each subreddit. Default=False",
         action="store_true",
         default=False,
     )
     parser.add_argument(
         "-b",
         "--build-basic",
-        help="flag to build basic information for each subreddit",
+        help="flag to build basic information for each subreddit. Default=False",
         action="store_true",
         default=False,
     )
@@ -1316,14 +1316,14 @@ def parse_args():
         "-p",
         "--build-pairs",
         help="flag to build training/validating pairs for each "
-            + "subreddit then aggregate for each year specified",
+            + "subreddit then aggregate for each year specified. Default=False",
         action="store_true",
         default=False,
     )
     parser.add_argument(
         "--val-train-ratio",
         required="--build-pairs",
-        help="val/train ratio",
+        help="val/train ratio. Use this with --build-pairs. Default=0.1",
         type=float,
         default=0.1,
     )
