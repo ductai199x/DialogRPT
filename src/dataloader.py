@@ -62,21 +62,6 @@ class RedditResponseDataLoader:
         self.input_lock = Lock()
         self.exit_event = Event()
         self.workers = []
-        for _ in range(num_workers):
-            worker = Process(
-                target=self.worker_fn,
-                args=(
-                    self.input_lock,
-                    self.prefetch_semaphore,
-                    self.exit_event,
-                    self.output_queue,
-                ),
-            )
-            worker.daemon = True
-            worker.start()
-            self.workers.append(worker)
-
-        
 
     def worker_fn(
         self,
@@ -88,12 +73,13 @@ class RedditResponseDataLoader:
         while True:
             prefetch_smp.acquire()
             if exit_event.is_set():
-                return
+                break
             try:
                 with input_lock:
                     batch = next(self.dataset_iter)
-                output_queue.put(self.prepare_data(batch))
-            except StopIteration:
+                output_queue.put(batch)
+            except (StopIteration, EOFError):
+                exit_event.set()
                 break
 
     def get_dataset_iter(self):
@@ -109,16 +95,37 @@ class RedditResponseDataLoader:
         )
 
     def __iter__(self):
+        self.dataset_iter.close()
         self.dataset_iter = self.get_dataset_iter()
         self.exit_event.clear()
+        if len(self.workers) > 0:
+            for w in self.workers:
+                w.join(timeout=5.0)
+            self.workers.clear()
+            self.output_queue._reset()
+        for _ in range(self.num_workers):
+            worker = Process(
+                target=self.worker_fn,
+                args=(
+                    self.input_lock,
+                    self.prefetch_semaphore,
+                    self.exit_event,
+                    self.output_queue,
+                ),
+            )
+            worker.daemon = True
+            worker.start()
+            self.workers.append(worker)
         return self
 
     def __next__(self):
-        return self.get()
+        return self.prepare_data(self.get())
 
     def get(self) -> pd.DataFrame:
         # fetch the data from the output queue
         while True:
+            if self.exit_event.is_set():
+                raise StopIteration
             try:
                 data = self.output_queue.get(timeout=1e-6)
                 self.prefetch_semaphore.release()
@@ -129,38 +136,55 @@ class RedditResponseDataLoader:
 
     def prepare_data(self, batch: pd.DataFrame):
         # process the data
-        ctxt = list(
-            map(lambda s: np.fromstring(s, dtype=int, sep=" ")[-self.max_ctxt_length :], batch["context"].astype("str"))
-        )
-        rpos = list(map(lambda s: np.fromstring(s, dtype=int, sep=" "), batch["response_pos"].astype("str")))
-        rneg = list(map(lambda s: np.fromstring(s, dtype=int, sep=" "), batch["response_neg"].astype("str")))
+        pos_samples = []
+        neg_samples = []
+        pos_atn_masks = []
+        neg_atn_masks = []
+        ctxt_lens = []
+        for ctxt, rpos, rneg in zip(
+            batch["context"].astype("str"),
+            batch["response_pos"].astype("str"),
+            batch["response_neg"].astype("str"),
+        ):
+            ctxt = np.fromstring(ctxt, dtype=int, sep=" ")[-self.max_ctxt_length :]
+            rpos = np.fromstring(rpos, dtype=int, sep=" ")
+            rneg = np.fromstring(rneg, dtype=int, sep=" ")
 
-        pos_samples = list(
-            map(lambda c, r: torch.tensor([*c, self.ix_EOS, *r][: self.max_seq_length]), *[ctxt, rpos])
-        )
-        neg_samples = list(
-            map(lambda c, r: torch.tensor([*c, self.ix_EOS, *r][: self.max_seq_length]), *[ctxt, rneg])
-        )
+            pos_sample = [*ctxt, self.ix_EOS, *rpos][: self.max_seq_length]
+            neg_sample = [*ctxt, self.ix_EOS, *rneg][: self.max_seq_length]
 
-        len_ctxt = self.get_lengths(ctxt)
-        len_rpos = self.get_lengths(pos_samples)
-        len_rneg = self.get_lengths(neg_samples)
+            len_ctxt = len(ctxt)
+            len_rpos = len(pos_sample)
+            len_rneg = len(neg_sample)
 
-        pos_samples = self.pad(pos_samples).long()
-        neg_samples = self.pad(neg_samples).long()
+            pos_sample += [self.ix_EOS] * (self.max_seq_length - len_rpos)
+            neg_sample += [self.ix_EOS] * (self.max_seq_length - len_rneg)
+            pos_atn_mask = [1] * len_rpos + [0] * (self.max_seq_length - len_rpos)
+            neg_atn_mask = [1] * len_rneg + [0] * (self.max_seq_length - len_rneg)
 
-        score_pos = batch["response_pos_feedback"].to_list()
-        score_neg = batch["response_neg_feedback"].to_list()
-        rank_pos = batch["response_pos_norm_rank"].to_list()
-        rank_neg = batch["response_neg_norm_rank"].to_list()
-        hr_gap = batch["hour_gap"].to_list()
+            pos_samples.append(pos_sample)
+            neg_samples.append(neg_sample)
+            pos_atn_masks.append(pos_atn_mask)
+            neg_atn_masks.append(neg_atn_mask)
+            ctxt_lens.append(len_ctxt)
+
+        pos_samples = torch.tensor(pos_samples, dtype=torch.long)
+        neg_samples = torch.tensor(neg_samples, dtype=torch.long)
+        pos_atn_masks = torch.tensor(pos_atn_masks, dtype=torch.long)
+        neg_atn_masks = torch.tensor(neg_atn_masks, dtype=torch.long)
+
+        score_pos = torch.tensor(batch["response_pos_feedback"].to_numpy())
+        score_neg = torch.tensor(batch["response_neg_feedback"].to_numpy())
+        rank_pos = torch.tensor(batch["response_pos_norm_rank"].to_numpy())
+        rank_neg = torch.tensor(batch["response_neg_norm_rank"].to_numpy())
+        hr_gap = torch.tensor(batch["hour_gap"].to_numpy())
 
         return {
-            "ids_pos": pos_samples,
-            "ids_neg": neg_samples,
-            "len_pos": len_rpos,
-            "len_neg": len_rneg,
-            "len_cxt": len_ctxt,
+            "pos_samples": pos_samples,
+            "neg_samples": neg_samples,
+            "pos_atn_masks": pos_atn_masks,
+            "neg_atn_masks": neg_atn_masks,
+            "len_cxt": ctxt_lens,
             "score_pos": score_pos,
             "score_neg": score_neg,
             "rank_pos": rank_pos,
@@ -186,23 +210,25 @@ class RedditResponseDataLoader:
 
 
 if __name__ == "__main__":
-    ds_path = "data/out/updown/2012/train.tsv"
-    batch_size = 64
-    prefetch_batches = 15
+    ds_path = "data/out/width/2011/test_dl.tsv"
+    batch_size = 10
+    prefetch_batches = 3
     num_workers = 1
-    max_iter = 10_000
+    max_iter = 100
     dl = RedditResponseDataLoader(
         ds_path,
         batch_size=batch_size,
         num_workers=num_workers,
         prefetch_batches=prefetch_batches,
     )
-    for i in tqdm(itertools.islice(dl, max_iter), miniters=200):
-        time.sleep(1e-2)
+    for i in range(3):
+        for i in tqdm(itertools.islice(dl, max_iter), miniters=200):
+            time.sleep(1e-2)
         # print(i)
         # print(type(i))
         # break
 
+    # to compare with single process read from pandas
     # df_iter = pd.read_csv(
     #     ds_path,
     #     sep="\t",
@@ -215,4 +241,25 @@ if __name__ == "__main__":
     # for i in tqdm(itertools.islice(df_iter, max_iter), miniters=200):
     #     dl.prepare_data(i)
     #     time.sleep(1e-2)
-        
+
+
+# OLD PREPARE DATA - JUST IN CASE NEED LATER!
+# ctxt = list(
+#     map(lambda s: np.fromstring(s, dtype=int, sep=" ")[-self.max_ctxt_length :], batch["context"].astype("str"))
+# )
+# rpos = list(map(lambda s: np.fromstring(s, dtype=int, sep=" "), batch["response_pos"].astype("str")))
+# rneg = list(map(lambda s: np.fromstring(s, dtype=int, sep=" "), batch["response_neg"].astype("str")))
+
+# pos_samples = list(
+#     map(lambda c, r: torch.tensor([*c, self.ix_EOS, *r][: self.max_seq_length]), *[ctxt, rpos])
+# )
+# neg_samples = list(
+#     map(lambda c, r: torch.tensor([*c, self.ix_EOS, *r][: self.max_seq_length]), *[ctxt, rneg])
+# )
+
+# len_ctxt = self.get_lengths(ctxt)
+# len_rpos = list(map(lambda ,self.get_lengths(pos_samples)))
+# len_rneg = self.get_lengths(neg_samples)
+
+# pos_samples = self.pad(pos_samples).long()
+# neg_samples = self.pad(neg_samples).long()
