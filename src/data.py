@@ -30,7 +30,6 @@ banned_windows = frozenset(("con prn aux nul com1 com2 com3 com4 com5 com6 com7 
 accepted_subs = set() # cache these for O(1) look up
 banned_subs = set() # cache these for O(1) look up
 
-Pool().imap_unordered
 
 def print_mult_procs(msg, lock, pos):
     with lock:
@@ -373,7 +372,7 @@ def extract_rs(date, print_pos, lock):
 
             if not all([k in root for k in kk]):
                 continue
-            
+
             if root["subreddit"] in banned_subs:
                 continue
             if root["subreddit"] not in accepted_subs:
