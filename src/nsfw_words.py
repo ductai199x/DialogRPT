@@ -106,6 +106,8 @@ nsfw_words = set([
     "plug",
     "poop",
     "porn",
+    "pussy",
+    "pussi",
     "randomsexiness",
     "rape",
     "roleplay",
