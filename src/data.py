@@ -24,7 +24,13 @@ LINE_CLEAR = "\033[K"
 ERASE_AND_BEGIN_LINE = "\033[2K\033[1G"
 MAX_PARALLEL_PROCS = 6
 TOP_K_TEXTS = 50
+banned_windows = frozenset(("con prn aux nul com1 com2 com3 com4 com5 com6 com7 com8 com9 "
+                 + "lpt1 lpt2 lpt3 lpt4 lpt5 lpt6 lpt7 lpt8 lpt9").split())
 
+accepted_subs = set() # cache these for O(1) look up
+banned_subs = set() # cache these for O(1) look up
+
+Pool().imap_unordered
 
 def print_mult_procs(msg, lock, pos):
     with lock:
@@ -204,39 +210,21 @@ def extract_xz(archive: str, out_path: str, pos: int, overwrite: bool, lock: Man
         pbar.close()
 
 
-def valid_sub(sub):
-    if sub.upper() in [
-        "CON",
-        "PRN",
-        "AUX",
-        "NUL",
-        "COM1",
-        "COM2",
-        "COM3",
-        "COM4",
-        "COM5",
-        "COM6",
-        "COM7",
-        "COM8",
-        "COM9",
-        "LPT1",
-        "LPT2",
-        "LPT3",
-        "LPT4",
-        "LPT5",
-        "LPT6",
-        "LPT7",
-        "LPT8",
-        "LPT9",
-    ]:
-        # not allowed by Windows system
+def valid_sub(sub: str):
+    global accepted_subs
+    sub_lower = sub.lower()
+    if sub_lower.startswith("u_"):
+        banned_subs.add(sub)
         return False
-    if ":" in sub:
+    if len(sub_lower) <= 4 and sub_lower in banned_windows:
+        banned_subs.add(sub)
         return False
-    if len([e for e in nsfw_words if e in sub.lower()]) > 0:
-        return False
-    # for ss in nsfw_words:
-    #     if ss in sub.lower(): return False
+    for w in nsfw_words:
+        if w in sub_lower:
+            banned_subs.add(sub)
+            return False
+
+    accepted_subs.add(sub)
     return True
 
 
@@ -302,19 +290,18 @@ def extract_rc(date, print_pos, lock):
             line = line.strip("\n")
             try:
                 node = json.loads(line)
-            except Exception:
+            except:
                 continue
 
-            ok = True
-            for k in kk:
-                if k not in node:
-                    ok = False
-                    break
-            if not ok:
-                break
-
-            if not valid_sub(node["subreddit"]):
+            if "name" not in node:
+                node["name"] = node["author_fullname"] # account for some changes in API
+            
+            if not all([k in node for k in kk]):
                 continue
+
+            if (node["subreddit"] in banned_subs) and (node["subreddit"] not in accepted_subs):
+                if not valid_sub(node["subreddit"]):
+                    continue
 
             if node["subreddit"] not in nodes:
                 nodes[node["subreddit"]] = []
@@ -323,7 +310,7 @@ def extract_rc(date, print_pos, lock):
             edges[node["subreddit"]].append(f"{node['link_id']}\t{node['parent_id']}\t{node['name']}")
 
             m += 1
-            if m % 1e5 == 0:
+            if n % 1e4 == 0:
                 save(nodes, edges)
                 nodes = dict()
                 edges = dict()
@@ -331,7 +318,7 @@ def extract_rc(date, print_pos, lock):
                     pbar.set_postfix_str(
                         f"[RC_{date}] saved {m/1e6:.2f}/{n/1e6:.2f} M, {len(subs)} subreddits"
                     )
-                    pbar.update(1e5)
+                    pbar.update(1e4)
 
     save(nodes, edges)
     with lock:
@@ -379,18 +366,15 @@ def extract_rs(date, print_pos, lock):
             line = line.strip("\n")
             try:
                 root = json.loads(line)
-            except Exception:
+            except:
                 continue
 
-            ok = True
-            for k in kk:
-                if k not in root:
-                    ok = False
-                    break
-            if not ok:
-                break
-            if not valid_sub(root["subreddit"]):
+            if not all([k in root for k in kk]):
                 continue
+            
+            if (root["subreddit"] in banned_subs) and (root["subreddit"] not in accepted_subs):
+                if not valid_sub(root["subreddit"]):
+                    continue
 
             # some bz2, e.g. 2012-09, doesn"t have the `name` entry
             if "name" not in root:
@@ -401,14 +385,14 @@ def extract_rs(date, print_pos, lock):
             roots[root["subreddit"]].append(line)
 
             m += 1
-            if m % 4e4 == 0:
+            if n % 1e4 == 0:
                 save(roots)
                 roots = dict()
                 with lock:
                     pbar.set_postfix_str(
                         f"[RS_{date}] saved {m/1e6:.2f}/{n/1e6:.2f} M, {len(subs)} subreddits"
                     )
-                    pbar.update(4e4)
+                    pbar.update(1e4)
     save(roots)
     with lock:
         pbar.clear()
@@ -542,8 +526,9 @@ def extract_trees(sub, year, pos_queue, lock, overwrite=True):
     for date in get_dates(year):
         path = f"{jsonl_dir}/{sub}/{date}_edges.tsv"
         if not os.path.exists(path):
-            # print("no such file: "+path)
+            print(f"[{sub:<30} {year:<7}] {path} does not exist")
             continue
+        
         for line in open(path, "r", encoding="utf-8"):
             n += 1
             link, parent, child = line.strip("\n").split("\t")
@@ -1271,14 +1256,14 @@ def data_preprocess():
     top_k_subs = None
     for year in years:
         if ARGS.build_json:
-            build_status = build_json(year, overwrite=True)
+            build_status = build_json(year, overwrite=False)
             if not build_status:
                 continue
         if ARGS.build_basic:
-            top_k_subs = build_basic(year, overwrite=True)
+            top_k_subs = build_basic(year, overwrite=False)
             print(f"Building pairs for these {TOP_K_TEXTS} subs: {top_k_subs}")
         if ARGS.build_pairs:
-            [build_pairs(year, top_k_subs, fb, ARGS.val_train_ratio, overwrite=True) for fb in ("updown", "depth", "width")]
+            [build_pairs(year, top_k_subs, fb, ARGS.val_train_ratio, overwrite=False) for fb in ("updown", "depth", "width")]
 
 
 def parse_args():
@@ -1322,7 +1307,6 @@ def parse_args():
     )
     parser.add_argument(
         "--val-train-ratio",
-        required="--build-pairs",
         help="val/train ratio. Use this with --build-pairs. Default=0.1",
         type=float,
         default=0.1,
