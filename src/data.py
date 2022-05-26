@@ -298,8 +298,10 @@ def extract_rc(date, print_pos, lock):
             
             if not all([k in node for k in kk]):
                 continue
-
-            if (node["subreddit"] in banned_subs) and (node["subreddit"] not in accepted_subs):
+            
+            if node["subreddit"] in banned_subs:
+                continue
+            if node["subreddit"] not in accepted_subs:
                 if not valid_sub(node["subreddit"]):
                     continue
 
@@ -372,7 +374,9 @@ def extract_rs(date, print_pos, lock):
             if not all([k in root for k in kk]):
                 continue
             
-            if (root["subreddit"] in banned_subs) and (root["subreddit"] not in accepted_subs):
+            if root["subreddit"] in banned_subs:
+                continue
+            if root["subreddit"] not in accepted_subs:
                 if not valid_sub(root["subreddit"]):
                     continue
 
