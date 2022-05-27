@@ -496,7 +496,10 @@ def extract_txt(sub, year, pos_queue, lock, tokenizer, result_queue, overwrite=T
             n += 1
             d = json.loads(line.strip("\n"))
             if "name" not in d:
-                d["name"] = f"t3_{d['id']}"
+                if "author_fullname" in d and d["author_fullname"] is not None:
+                    d["name"] = d["author_fullname"]
+                else:
+                    d["name"] = f"t3_{d['id']}"
             if d["name"] in name_set:
                 continue
             name_set.add(d["name"])
@@ -590,7 +593,10 @@ def extract_time(sub, year, pos_queue, lock, overwrite=True):
             n += 1
             d = json.loads(line.strip("\n"))
             if "name" not in d:
-                d["name"] = f"t3_{d['id']}"
+                if "author_fullname" in d and d["author_fullname"] is not None:
+                    d["name"] = d["author_fullname"]
+                else:
+                    d["name"] = f"t3_{d['id']}"
             if d["name"] in name_set:
                 continue
             name_set.add(d["name"])
@@ -834,6 +840,7 @@ def create_pairs(sub, year, feedback, pos_queue, lock, overwrite=True):
             continue
         parent = turns[-2]
         if parent == prev:
+            n_line += 1
             replies.append((score, reply))
         else:
             if replies:
@@ -1195,23 +1202,23 @@ def build_basic(year, overwrite=True):
         print(f"Skipping Extracting Texts for year {year}..\n")
         print("\n" * (MAX_PARALLEL_PROCS), flush=True)
 
-    # with term.location(0, term_height - MAX_PARALLEL_PROCS - 2):
-    #     print(end=LINE_CLEAR, flush=True)
-    #     print("Extracting Time...")
-    # with Pool(MAX_PARALLEL_PROCS) as pool:
-    #     for sub in top_k_subs:
-    #         pool.apply_async(extract_time, args=(sub, year, print_pos_queue, lock, True))
-    #     pool.close()
-    #     pool.join()
+    with term.location(0, term_height - MAX_PARALLEL_PROCS - 2):
+        print(end=LINE_CLEAR, flush=True)
+        print("Extracting Time...")
+    with Pool(MAX_PARALLEL_PROCS) as pool:
+        for sub in top_k_subs:
+            pool.apply_async(extract_time, args=(sub, year, print_pos_queue, lock, True))
+        pool.close()
+        pool.join()
 
-    # with term.location(0, term_height - MAX_PARALLEL_PROCS - 2):
-    #     print(end=LINE_CLEAR, flush=True)
-    #     print("Extracting Trees...")
-    # with Pool(MAX_PARALLEL_PROCS) as pool:
-    #     for sub in top_k_subs:
-    #         pool.apply_async(extract_trees, args=(sub, year, print_pos_queue, lock, True))
-    #     pool.close()
-    #     pool.join()
+    with term.location(0, term_height - MAX_PARALLEL_PROCS - 2):
+        print(end=LINE_CLEAR, flush=True)
+        print("Extracting Trees...")
+    with Pool(MAX_PARALLEL_PROCS) as pool:
+        for sub in top_k_subs:
+            pool.apply_async(extract_trees, args=(sub, year, print_pos_queue, lock, True))
+        pool.close()
+        pool.join()
 
     with term.location(0, term_height - MAX_PARALLEL_PROCS - 2):
         print(end=LINE_CLEAR, flush=True)
@@ -1245,8 +1252,9 @@ def build_pairs(year, top_k_subs, feedback, val_train_ratio=0.1, overwrite=True)
     print_pos_queue = Manager().Queue(maxsize=MAX_PARALLEL_PROCS)
     [print_pos_queue.put(i) for i in range(MAX_PARALLEL_PROCS)]
     print("\n" * (MAX_PARALLEL_PROCS), flush=True)
+    term_height = term.height if term.height else 20
 
-    with term.location(0, term.height - MAX_PARALLEL_PROCS - 2):
+    with term.location(0, term_height - MAX_PARALLEL_PROCS - 2):
         print(end=LINE_CLEAR, flush=True)
         print("Creating Pairs...")
     with Pool(MAX_PARALLEL_PROCS) as pool:
@@ -1255,7 +1263,7 @@ def build_pairs(year, top_k_subs, feedback, val_train_ratio=0.1, overwrite=True)
         pool.close()
         pool.join()
 
-    with term.location(0, term.height - MAX_PARALLEL_PROCS - 2):
+    with term.location(0, term_height - MAX_PARALLEL_PROCS - 2):
         print(end=LINE_CLEAR, flush=True)
         print("Adding sequences...")
     with Pool(MAX_PARALLEL_PROCS) as pool:
