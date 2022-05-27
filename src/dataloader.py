@@ -32,12 +32,14 @@ class RedditResponseDataLoader:
         batch_size=64,
         num_workers=1,
         prefetch_batches=8,
+        total_num_samples=None,
         **kwargs,
     ):
         self.dataset_path = dataset_path
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.prefetch_batches = prefetch_batches
+        self.total_num_samples = total_num_samples
         self.dataset_iter = self.get_dataset_iter()
 
         self.ix_EOS = 50256
@@ -93,6 +95,9 @@ class RedditResponseDataLoader:
             engine="c",
             on_bad_lines="warn",
         )
+
+    def __len__(self):
+        return -(-self.total_num_samples // self.batch_size) # ceil without math
 
     def __iter__(self):
         self.dataset_iter.close()
@@ -210,7 +215,7 @@ class RedditResponseDataLoader:
 
 
 if __name__ == "__main__":
-    ds_path = "data/out/width/2011/test_dl.tsv"
+    ds_path = "data/out/width/2011/train.tsv"
     batch_size = 10
     prefetch_batches = 3
     num_workers = 1
