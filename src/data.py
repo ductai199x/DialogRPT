@@ -416,6 +416,7 @@ def extract_txt(sub, year, pos_queue, lock, tokenizer, result_queue, overwrite=T
     path_out = f"{dir}/{year}_txt.tsv"
     path_done = f"{path_out}.done"
     if not overwrite and os.path.exists(path_done):
+        pos_queue.put(pos)
         return
 
     dates = get_dates(year)
@@ -464,8 +465,14 @@ def extract_txt(sub, year, pos_queue, lock, tokenizer, result_queue, overwrite=T
         for line in open(path, "r", encoding="utf-8"):
             n += 1
             d = json.loads(line.strip("\n"))
-            if d["name"] in name_set:
+            if "name" not in d:
+                if "author_fullname" in d and d["author_fullname"] is not None:
+                    d["name"] = d["author_fullname"]
+                else:
+                    d["name"] = f"t3_{d['id']}"
+            if "name" in d and d["name"] in name_set:
                 continue
+            
             name_set.add(d["name"])
             txt_ids = clean(d["body"])
             if txt_ids is not None:
@@ -522,6 +529,7 @@ def extract_trees(sub, year, pos_queue, lock, overwrite=True):
     os.makedirs(dir, exist_ok=True)
     path_out = f"{dir}/{year}_trees.pkl"
     if os.path.exists(path_out) and not overwrite:
+        pos_queue.put(pos)
         return
 
     trees = dict()
@@ -543,6 +551,7 @@ def extract_trees(sub, year, pos_queue, lock, overwrite=True):
                 print(f"[{sub:<30} {date}] {len(trees)} trees {n/len(trees):.1f} nodes/tree")
 
     if not trees:
+        pos_queue.put(pos)
         return
 
     os.makedirs(dir, exist_ok=True)
@@ -561,6 +570,7 @@ def extract_time(sub, year, pos_queue, lock, overwrite=True):
     path_out = f"{dir}/{year}_time.tsv"
     path_done = f"{path_out}.done"
     if not overwrite and os.path.exists(path_done):
+        pos_queue.put(pos)
         return
     dates = get_dates(year)
     os.makedirs(dir, exist_ok=True)
@@ -609,13 +619,16 @@ def extract_feedback(sub, year, pos_queue, lock, overwrite=True):
     path_out = f"{dir}/{year}_feedback.tsv"
     path_done = f"{path_out}.done"
     if not overwrite and os.path.exists(path_done):
+        pos_queue.put(pos)
         return
 
     path_pkl = f"{dir}/{year}_trees.pkl"
     if not os.path.exists(path_pkl):
+        pos_queue.put(pos)
         return
     trees = pickle.load(open(path_pkl, "rb"))
     if not trees:
+        pos_queue.put(pos)
         return
 
     dates = get_dates(year)
@@ -630,6 +643,7 @@ def extract_feedback(sub, year, pos_queue, lock, overwrite=True):
 
     if not updown:
         print("empty updown")
+        pos_queue.put(pos)
         return
 
     with open(path_out, "w", encoding="utf-8") as f:
@@ -727,16 +741,19 @@ def create_pairs(sub, year, feedback, pos_queue, lock, overwrite=True):
     path_out = f"{dir}/{year}_{feedback}.tsv"
     path_done = f"{path_out}.done"
     if not overwrite and os.path.exists(path_done):
+        pos_queue.put(pos)
         return
 
     ix_feedback = ["vol", "width", "depth", "updown"].index(feedback) + 1
     path_in = f"{dir}/{year}_feedback.tsv"
     if not os.path.exists(path_in):
+        pos_queue.put(pos)
         return
 
     time = dict()
     path_time = f"{dir}/{year}_time.tsv"
     if not os.path.exists(path_time):
+        pos_queue.put(pos)
         return
     for line in open(path_time, "r"):
         ss = line.strip("\n").split("\t")
@@ -840,13 +857,16 @@ def add_seq(sub, year, feedback, pos_queue, lock, overwrite=False):
     path_done = f"{path_out}.done"
 
     if os.path.exists(path_done) and not overwrite:
+        pos_queue.put(pos)
         return
     if not os.path.exists(f"{dir}/{fname}.tsv"):
+        pos_queue.put(pos)
         return
 
     seq = dict()
     path = f"{dir}/{year}_txt.tsv"
     if not os.path.exists(path):
+        pos_queue.put(pos)
         return
     for line in open(path, "r", encoding="utf-8"):
         ss = line.strip("\n").split("\t")
