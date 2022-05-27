@@ -32,14 +32,16 @@ banned_subs = set() # cache these for O(1) look up
 
 
 def print_mult_procs(msg, lock, pos):
+    term_height = term.height if term.height else 20
     with lock:
-        with term.location(0, term.height - pos - 2):
+        with term.location(0, term_height - pos - 2):
             print(end=LINE_CLEAR, flush=True)
             print(msg, flush=True)
 
 
 def print_same_line(msg):
-    with term.location(0, term.height - 2):
+    term_height = term.height if term.height else 20
+    with term.location(0, term_height - 2):
         print(end=LINE_CLEAR, flush=True)
         print(msg, flush=True)
 
@@ -639,7 +641,15 @@ def extract_feedback(sub, year, pos_queue, lock, overwrite=True):
             continue
         for line in open(path, "r", encoding="utf-8"):
             d = json.loads(line.strip("\n"))
-            updown[d["name"]] = d["ups"] - d["downs"]
+            if "name" not in d:
+                if "author_fullname" in d and d["author_fullname"] is not None:
+                    d["name"] = d["author_fullname"]
+                else:
+                    d["name"] = f"t3_{d['id']}"
+            if "ups" in d:
+                updown[d["name"]] = d["ups"] - d["downs"]
+            else:
+                updown[d["name"]] = d["score"]
 
     if not updown:
         print("empty updown")
@@ -1158,13 +1168,14 @@ def build_basic(year, overwrite=True):
     lock = Manager().Lock()
     print_pos_queue = Manager().Queue(maxsize=MAX_PARALLEL_PROCS)
     [print_pos_queue.put(i) for i in range(MAX_PARALLEL_PROCS)]
+    term_height = term.height if term.height else 20
 
     if not top_k_subs_defined or overwrite:
         tokenizer = GPT2Tokenizer.from_pretrained("gpt2", padding=True, max_length=1024, truncation=True)
         subs = get_subs()
         result_queue = Manager().list()
         print("\n" * (MAX_PARALLEL_PROCS), flush=True)
-        with term.location(0, term.height - MAX_PARALLEL_PROCS - 2):
+        with term.location(0, term_height - MAX_PARALLEL_PROCS - 2):
             print(end=LINE_CLEAR, flush=True)
             print(f"Extracting Texts (Truncate to top only {TOP_K_TEXTS})...")
         with Pool(MAX_PARALLEL_PROCS) as pool:
@@ -1184,25 +1195,25 @@ def build_basic(year, overwrite=True):
         print(f"Skipping Extracting Texts for year {year}..\n")
         print("\n" * (MAX_PARALLEL_PROCS), flush=True)
 
-    with term.location(0, term.height - MAX_PARALLEL_PROCS - 2):
-        print(end=LINE_CLEAR, flush=True)
-        print("Extracting Time...")
-    with Pool(MAX_PARALLEL_PROCS) as pool:
-        for sub in top_k_subs:
-            pool.apply_async(extract_time, args=(sub, year, print_pos_queue, lock, True))
-        pool.close()
-        pool.join()
+    # with term.location(0, term_height - MAX_PARALLEL_PROCS - 2):
+    #     print(end=LINE_CLEAR, flush=True)
+    #     print("Extracting Time...")
+    # with Pool(MAX_PARALLEL_PROCS) as pool:
+    #     for sub in top_k_subs:
+    #         pool.apply_async(extract_time, args=(sub, year, print_pos_queue, lock, True))
+    #     pool.close()
+    #     pool.join()
 
-    with term.location(0, term.height - MAX_PARALLEL_PROCS - 2):
-        print(end=LINE_CLEAR, flush=True)
-        print("Extracting Trees...")
-    with Pool(MAX_PARALLEL_PROCS) as pool:
-        for sub in top_k_subs:
-            pool.apply_async(extract_trees, args=(sub, year, print_pos_queue, lock, True))
-        pool.close()
-        pool.join()
+    # with term.location(0, term_height - MAX_PARALLEL_PROCS - 2):
+    #     print(end=LINE_CLEAR, flush=True)
+    #     print("Extracting Trees...")
+    # with Pool(MAX_PARALLEL_PROCS) as pool:
+    #     for sub in top_k_subs:
+    #         pool.apply_async(extract_trees, args=(sub, year, print_pos_queue, lock, True))
+    #     pool.close()
+    #     pool.join()
 
-    with term.location(0, term.height - MAX_PARALLEL_PROCS - 2):
+    with term.location(0, term_height - MAX_PARALLEL_PROCS - 2):
         print(end=LINE_CLEAR, flush=True)
         print("Extracting Feedbacks...")
     with Pool(MAX_PARALLEL_PROCS) as pool:
