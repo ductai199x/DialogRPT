@@ -3,47 +3,56 @@ import json
 import lzma
 import os
 import pickle
+import sys
 import time
 from argparse import ArgumentParser
-from transformers19 import GPT2Tokenizer
 from multiprocessing import Manager, Pool
 
 import numpy as np
 import rich
 import zstandard
-from blessings import Terminal
 from tqdm.auto import tqdm
 
 from nsfw_words import nsfw_words
+from transformers19 import GPT2Tokenizer
 
 parser = ArgumentParser()
 console = rich.get_console()
-term = Terminal()
-LINE_UP = "\033[1A"
 LINE_CLEAR = "\033[K"
-ERASE_AND_BEGIN_LINE = "\033[2K\033[1G"
 MAX_PARALLEL_PROCS = 6
 TOP_K_TEXTS = 50
-banned_windows = frozenset(("con prn aux nul com1 com2 com3 com4 com5 com6 com7 com8 com9 "
-                 + "lpt1 lpt2 lpt3 lpt4 lpt5 lpt6 lpt7 lpt8 lpt9").split())
+banned_windows = frozenset(
+    (
+        "con prn aux nul com1 com2 com3 com4 com5 com6 com7 com8 com9 "
+        + "lpt1 lpt2 lpt3 lpt4 lpt5 lpt6 lpt7 lpt8 lpt9"
+    ).split()
+)
 
-accepted_subs = set() # cache these for O(1) look up
-banned_subs = set() # cache these for O(1) look up
+accepted_subs = set()  # cache these for O(1) look up
+banned_subs = set()  # cache these for O(1) look up
 
 
+# Up: \u001b[{n}A
+# Down: \u001b[{n}B
+# Right: \u001b[{n}C
+# Left: \u001b[{n}D
 def print_mult_procs(msg, lock, pos):
-    term_height = term.height if term.height else 20
     with lock:
-        with term.location(0, term_height - pos - 2):
-            print(end=LINE_CLEAR, flush=True)
-            print(msg, flush=True)
+        sys.stdout.write("\u001b[1000D")  # MOVE CURSOR LEFT
+        sys.stdout.write("\u001b[B" * (pos + 1))  # MOVE CURSOR DOWN TO WHERE WE WANT TO BE
+        sys.stdout.write("\u001b[" + LINE_CLEAR)  # CLEAR THE LINE WHERE WE WANT TO PRINT
+        sys.stdout.write(str(msg))  # PRINT THE MESSAGE ON THAT LINE
+        sys.stdout.write("\033[A" * (pos + 1))  # RETURN CURSOR BACK TO ITS ORIGINAL PLACE
+        sys.stdout.flush()
 
 
 def print_same_line(msg):
-    term_height = term.height if term.height else 20
-    with term.location(0, term_height - 2):
-        print(end=LINE_CLEAR, flush=True)
-        print(msg, flush=True)
+    sys.stdout.write("\u001b[1000D")  # MOVE CURSOR LEFT
+    sys.stdout.write("\u001b[B")  # MOVE CURSOR DOWN BY 1
+    sys.stdout.write("\u001b[" + LINE_CLEAR)  # CLEAR THE LINE
+    sys.stdout.write(str(msg))  # PRINT THE MESSAGE
+    sys.stdout.write("\033[A")  # MOVE CURSOR BACK UP BY 1
+    sys.stdout.flush()
 
 
 def dump_queue(q):
@@ -294,12 +303,15 @@ def extract_rc(date, print_pos, lock):
             except:
                 continue
 
-            if "name" not in node:
-                node["name"] = node["author_fullname"] # account for some changes in API
-            
+            if "name" not in node:  # account for some changes in API
+                if "author_fullname" in node and node["author_fullname"] is not None:
+                    node["name"] = node["author_fullname"]
+                else:
+                    node["name"] = f"t3_{node['id']}"
+
             if not all([k in node for k in kk]):
                 continue
-            
+
             if node["subreddit"] in banned_subs:
                 continue
             if node["subreddit"] not in accepted_subs:
@@ -372,6 +384,12 @@ def extract_rs(date, print_pos, lock):
             except:
                 continue
 
+            if "name" not in root:  # account for some changes in API
+                if "author_fullname" in root and root["author_fullname"] is not None:
+                    root["name"] = root["author_fullname"]
+                else:
+                    root["name"] = f"t3_{root['id']}"
+
             if not all([k in root for k in kk]):
                 continue
 
@@ -380,10 +398,6 @@ def extract_rs(date, print_pos, lock):
             if root["subreddit"] not in accepted_subs:
                 if not valid_sub(root["subreddit"]):
                     continue
-
-            # some bz2, e.g. 2012-09, doesn"t have the `name` entry
-            if "name" not in root:
-                root["name"] = f"t3_{root['id']}"
 
             if root["subreddit"] not in roots:
                 roots[root["subreddit"]] = []
@@ -474,7 +488,7 @@ def extract_txt(sub, year, pos_queue, lock, tokenizer, result_queue, overwrite=T
                     d["name"] = f"t3_{d['id']}"
             if "name" in d and d["name"] in name_set:
                 continue
-            
+
             name_set.add(d["name"])
             txt_ids = clean(d["body"])
             if txt_ids is not None:
@@ -544,7 +558,7 @@ def extract_trees(sub, year, pos_queue, lock, overwrite=True):
         if not os.path.exists(path):
             print(f"[{sub:<30} {year:<7}] {path} does not exist")
             continue
-        
+
         for line in open(path, "r", encoding="utf-8"):
             n += 1
             link, parent, child = line.strip("\n").split("\t")
@@ -851,7 +865,7 @@ def create_pairs(sub, year, feedback, pos_queue, lock, overwrite=True):
 
         if n_line % 1e4 == 0:
             print(f"[{sub:<30} {year:<7}] Processed {feedback} with {n_line} pairs")
-        
+
     if replies:
         n_line += match_time(replies, cxt)
 
@@ -1144,7 +1158,7 @@ def build_json(year, overwrite=True):
         pool.close()
         pool.join()
 
-    n_processes = 5 # seems to be slower if > 5
+    n_processes = 5  # seems to be slower if > 5
     with Pool(n_processes) as pool:
         for idx, date in enumerate(dates):
             pos = idx % n_processes
@@ -1175,16 +1189,12 @@ def build_basic(year, overwrite=True):
     lock = Manager().Lock()
     print_pos_queue = Manager().Queue(maxsize=MAX_PARALLEL_PROCS)
     [print_pos_queue.put(i) for i in range(MAX_PARALLEL_PROCS)]
-    term_height = term.height if term.height else 20
 
     if not top_k_subs_defined or overwrite:
         tokenizer = GPT2Tokenizer.from_pretrained("gpt2", padding=True, max_length=1024, truncation=True)
         subs = get_subs()
         result_queue = Manager().list()
-        print("\n" * (MAX_PARALLEL_PROCS), flush=True)
-        with term.location(0, term_height - MAX_PARALLEL_PROCS - 2):
-            print(end=LINE_CLEAR, flush=True)
-            print(f"Extracting Texts (Truncate to top only {TOP_K_TEXTS})...")
+        print(f"Extracting Texts (Truncate to top only {TOP_K_TEXTS})...")
         with Pool(MAX_PARALLEL_PROCS) as pool:
             for sub in subs:
                 pool.apply_async(
@@ -1200,29 +1210,22 @@ def build_basic(year, overwrite=True):
             f.write("\n".join([",".join(map(str, i)) for i in subs_txt_result_queue]))
     else:
         print(f"Skipping Extracting Texts for year {year}..\n")
-        print("\n" * (MAX_PARALLEL_PROCS), flush=True)
 
-    with term.location(0, term_height - MAX_PARALLEL_PROCS - 2):
-        print(end=LINE_CLEAR, flush=True)
-        print("Extracting Time...")
+    print("Extracting Time...")
     with Pool(MAX_PARALLEL_PROCS) as pool:
         for sub in top_k_subs:
             pool.apply_async(extract_time, args=(sub, year, print_pos_queue, lock, True))
         pool.close()
         pool.join()
 
-    with term.location(0, term_height - MAX_PARALLEL_PROCS - 2):
-        print(end=LINE_CLEAR, flush=True)
-        print("Extracting Trees...")
+    print("Extracting Trees...")
     with Pool(MAX_PARALLEL_PROCS) as pool:
         for sub in top_k_subs:
             pool.apply_async(extract_trees, args=(sub, year, print_pos_queue, lock, True))
         pool.close()
         pool.join()
 
-    with term.location(0, term_height - MAX_PARALLEL_PROCS - 2):
-        print(end=LINE_CLEAR, flush=True)
-        print("Extracting Feedbacks...")
+    print("Extracting Feedbacks...")
     with Pool(MAX_PARALLEL_PROCS) as pool:
         for sub in top_k_subs:
             pool.apply_async(extract_feedback, args=(sub, year, print_pos_queue, lock, True))
@@ -1233,7 +1236,7 @@ def build_basic(year, overwrite=True):
 
 
 def build_pairs(year, top_k_subs, feedback, val_train_ratio=0.1, overwrite=True):
-    if top_k_subs is None: # Then find it, if not found the file, the error
+    if top_k_subs is None:  # Then find it, if not found the file, the error
         top_k_subs_fpath = f"{redditsub_dir}/{year}_top_k_list.csv"
         if os.path.exists(top_k_subs_fpath) and os.path.isfile(top_k_subs_fpath):
             with open(top_k_subs_fpath, "r") as f:
@@ -1251,27 +1254,21 @@ def build_pairs(year, top_k_subs, feedback, val_train_ratio=0.1, overwrite=True)
     lock = Manager().Lock()
     print_pos_queue = Manager().Queue(maxsize=MAX_PARALLEL_PROCS)
     [print_pos_queue.put(i) for i in range(MAX_PARALLEL_PROCS)]
-    print("\n" * (MAX_PARALLEL_PROCS), flush=True)
-    term_height = term.height if term.height else 20
 
-    with term.location(0, term_height - MAX_PARALLEL_PROCS - 2):
-        print(end=LINE_CLEAR, flush=True)
-        print("Creating Pairs...")
+    print("Creating Pairs...")
     with Pool(MAX_PARALLEL_PROCS) as pool:
         for sub in top_k_subs:
             pool.apply_async(create_pairs, args=(sub, year, feedback, print_pos_queue, lock, overwrite))
         pool.close()
         pool.join()
 
-    with term.location(0, term_height - MAX_PARALLEL_PROCS - 2):
-        print(end=LINE_CLEAR, flush=True)
-        print("Adding sequences...")
+    print("Adding sequences...")
     with Pool(MAX_PARALLEL_PROCS) as pool:
         for sub in top_k_subs:
             pool.apply_async(add_seq, args=(sub, year, feedback, print_pos_queue, lock, overwrite))
         pool.close()
         pool.join()
-    
+
     path = combine_sub(year, feedback, overwrite)
     split_by_root(path, p_test=val_train_ratio)
     for part in ["train", "vali"]:
@@ -1298,14 +1295,17 @@ def data_preprocess():
     top_k_subs = None
     for year in years:
         if ARGS.build_json:
-            build_status = build_json(year, overwrite=False)
+            build_status = build_json(year, overwrite=ARGS.overwrite)
             if not build_status:
                 continue
         if ARGS.build_basic:
-            top_k_subs = build_basic(year, overwrite=False)
+            top_k_subs = build_basic(year, overwrite=ARGS.overwrite)
             print(f"Building pairs for these {TOP_K_TEXTS} subs: {top_k_subs}")
         if ARGS.build_pairs:
-            [build_pairs(year, top_k_subs, fb, ARGS.val_train_ratio, overwrite=False) for fb in ("updown", "depth", "width")]
+            [
+                build_pairs(year, top_k_subs, fb, ARGS.val_train_ratio, overwrite=ARGS.overwrite)
+                for fb in ("depth", "width")
+            ]
 
 
 def parse_args():
@@ -1343,7 +1343,7 @@ def parse_args():
         "-p",
         "--build-pairs",
         help="flag to build training/validating pairs for each "
-            + "subreddit then aggregate for each year specified. Default=False",
+        + "subreddit then aggregate for each year specified. Default=False",
         action="store_true",
         default=False,
     )
@@ -1352,6 +1352,13 @@ def parse_args():
         help="val/train ratio. Use this with --build-pairs. Default=0.1",
         type=float,
         default=0.1,
+    )
+    parser.add_argument(
+        "--overwrite",
+        help="Overwrite flag for build-json, build-basic, and build-pairs. "
+        + "Be really careful when use this option. Should run each build separately with this option.",
+        action="store_true",
+        default=False,
     )
     ARGS = parser.parse_args()
 
