@@ -1068,12 +1068,13 @@ def split_by_root(path, p_test=0.10):
                     f.write("\n".join(datasets[set_]) + "\n")
                 datasets[set_] = []
 
-    print(f"Test vs. Val samples: {ntrain}-{nvali}")
     for set_ in datasets:
         if len(datasets[set_]) == 0:
             continue
         with open(f"{path}.{set_}", "a", encoding="utf-8") as f:
             f.write("\n".join(datasets[set_]))
+    
+    print(f"Test vs. Val samples: {ntrain}-{nvali}")
 
 
 def shuffle(year, feedback, part, n_temp=10):
