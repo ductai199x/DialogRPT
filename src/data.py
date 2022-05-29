@@ -1052,11 +1052,13 @@ def split_by_root(path, p_test=0.10):
         root = cxt.strip().split()[0]
         if root != prev:
             if np.random.random() < p_test:
-                set_ = "vali"
-                nvali += 1
+                set_ = "vali"   
             else:
                 set_ = "train"
-                ntrain += 1
+        if set_ == "vali":
+            nvali += 1
+        else:
+            ntrain += 1
         datasets[set_].append(line)
         prev = root
 
