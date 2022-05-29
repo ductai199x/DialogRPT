@@ -2,8 +2,8 @@ import os
 import torch
 import pytorch_lightning as pl
 from pytorch_lightning import LightningModule, Trainer
-from torchmetrics import AUROC, F1Score, Accuracy, MatthewsCorrCoef
-from transformers19 import GPT2Tokenizer, GPT2Model, GPT2Config
+from torchmetrics import Accuracy
+from transformers19 import GPT2Model, GPT2Config
 from dataloader import *
 
 
@@ -59,6 +59,12 @@ class ScorerPLWrapper(LightningModule):
 
         self.train_acc = Accuracy()
         self.val_acc = Accuracy()
+        self.example_input_array = (
+            torch.zeros((1, 50), dtype=torch.long).to(self.device),
+            torch.zeros((1, 50), dtype=torch.long).to(self.device),
+            torch.zeros((1, 50), dtype=torch.long).to(self.device),
+            torch.zeros((1, 50), dtype=torch.long).to(self.device),
+        )
 
     def forward(self, ps, pm, ns, nm):
         return self.model(ps, pm, ns, nm)
@@ -124,7 +130,7 @@ class ScorerPLWrapper(LightningModule):
         return [optimizer]
 
 
-ds_path = "../data/out/updown/2011/train.tsv"
+ds_path = "data/out/updown/2011/train.tsv"
 batch_size = 32
 prefetch_batches = batch_size // 2
 num_workers = 1
@@ -139,8 +145,8 @@ dl = RedditResponseDataLoader(
 model = ScorerPLWrapper()
 
 logger = pl.loggers.TensorBoardLogger(
-    save_dir=os.getcwd(),
-    version=f"version_0",
+    save_dir="src/lightning_logs",
+    version=f"version_1",
     name="gpt-2-scorer",
     log_graph=True,
 )
@@ -155,6 +161,7 @@ trainer = Trainer(
         pl.callbacks.TQDMProgressBar(refresh_rate=1),
     ],
     fast_dev_run=False,
+    limit_train_batches=1000
 )
 
 trainer.fit(model, dl)

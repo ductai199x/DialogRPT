@@ -811,8 +811,12 @@ def create_pairs(sub, year, feedback, pos_queue, lock, overwrite=True):
             t_b, score_b, b = cand[i + 1]
             rank_a = rank[i]
             rank_b = rank[i + 1]
-            if score_a == score_b:
-                continue
+
+            if feedback == "updown":
+                if abs(score_a - score_b) < 10: continue
+            elif feedback in ["depth", "width"]:
+                if abs(score_a - score_b) < 4: continue
+            
             hr = (t_b - t_a) / 3600
             if score_b > score_a:
                 score_a, score_b = score_b, score_a
@@ -876,7 +880,7 @@ def create_pairs(sub, year, feedback, pos_queue, lock, overwrite=True):
         pos_queue.put(pos)
 
 
-def add_seq(sub, year, feedback, pos_queue, lock, overwrite=False):
+def add_seq(sub, year, feedback, pos_queue, lock, overwrite=True):
     pos = pos_queue.get()
     print = lambda msg: print_mult_procs(msg, lock, pos)
     print(f"[{sub:<30} {year:<7}] Adding sequence for {feedback}")
@@ -976,7 +980,7 @@ def add_seq(sub, year, feedback, pos_queue, lock, overwrite=False):
         pos_queue.put(pos)
 
 
-def combine_sub(year, feedback, overwrite=False, skip_same_pos=True):
+def combine_sub(year, feedback, overwrite=True, skip_same_pos=True):
     print_same_line(f"[{year} {feedback:<7}] Combining subs")
 
     dir = f"{output_dir}/{feedback}/{year}"
@@ -1126,9 +1130,9 @@ def shuffle(year, feedback, part, n_temp=10):
 
 def get_subs():
     # return ["4chan"]
-    tqdm.write("Collectiing subs...")
+    print("Collectiing subs...")
     subs = sorted(os.listdir(jsonl_dir))
-    tqdm.write(f"Collected {len(subs)} subs")
+    print(f"Collected {len(subs)} subs")
     return subs
 
 
@@ -1195,6 +1199,7 @@ def build_basic(year, overwrite=True):
         subs = get_subs()
         result_queue = Manager().list()
         print(f"Extracting Texts (Truncate to top only {TOP_K_TEXTS})...")
+        print("\n" * MAX_PARALLEL_PROCS, flush=True)
         with Pool(MAX_PARALLEL_PROCS) as pool:
             for sub in subs:
                 pool.apply_async(
@@ -1212,6 +1217,7 @@ def build_basic(year, overwrite=True):
         print(f"Skipping Extracting Texts for year {year}..\n")
 
     print("Extracting Time...")
+    print("\n" * MAX_PARALLEL_PROCS, flush=True)
     with Pool(MAX_PARALLEL_PROCS) as pool:
         for sub in top_k_subs:
             pool.apply_async(extract_time, args=(sub, year, print_pos_queue, lock, True))
@@ -1219,6 +1225,7 @@ def build_basic(year, overwrite=True):
         pool.join()
 
     print("Extracting Trees...")
+    print("\n" * MAX_PARALLEL_PROCS, flush=True)
     with Pool(MAX_PARALLEL_PROCS) as pool:
         for sub in top_k_subs:
             pool.apply_async(extract_trees, args=(sub, year, print_pos_queue, lock, True))
@@ -1226,12 +1233,14 @@ def build_basic(year, overwrite=True):
         pool.join()
 
     print("Extracting Feedbacks...")
+    print("\n" * MAX_PARALLEL_PROCS, flush=True)
     with Pool(MAX_PARALLEL_PROCS) as pool:
         for sub in top_k_subs:
             pool.apply_async(extract_feedback, args=(sub, year, print_pos_queue, lock, True))
         pool.close()
         pool.join()
 
+    print("\n" * MAX_PARALLEL_PROCS, flush=True)
     return top_k_subs
 
 
@@ -1256,6 +1265,7 @@ def build_pairs(year, top_k_subs, feedback, val_train_ratio=0.1, overwrite=True)
     [print_pos_queue.put(i) for i in range(MAX_PARALLEL_PROCS)]
 
     print("Creating Pairs...")
+    print("\n" * MAX_PARALLEL_PROCS, flush=True)
     with Pool(MAX_PARALLEL_PROCS) as pool:
         for sub in top_k_subs:
             pool.apply_async(create_pairs, args=(sub, year, feedback, print_pos_queue, lock, overwrite))
@@ -1263,14 +1273,19 @@ def build_pairs(year, top_k_subs, feedback, val_train_ratio=0.1, overwrite=True)
         pool.join()
 
     print("Adding sequences...")
+    print("\n" * MAX_PARALLEL_PROCS, flush=True)
     with Pool(MAX_PARALLEL_PROCS) as pool:
         for sub in top_k_subs:
             pool.apply_async(add_seq, args=(sub, year, feedback, print_pos_queue, lock, overwrite))
         pool.close()
         pool.join()
 
+    print("\n" * MAX_PARALLEL_PROCS, flush=True)
+    print("\n" + "-"*20 + "\n")
     path = combine_sub(year, feedback, overwrite)
+    print("\n" + "-"*20 + "\n")
     split_by_root(path, p_test=val_train_ratio)
+    print("\n" + "-"*20 + "\n")
     for part in ["train", "vali"]:
         shuffle(year, feedback, part)
 
@@ -1304,7 +1319,7 @@ def data_preprocess():
         if ARGS.build_pairs:
             [
                 build_pairs(year, top_k_subs, fb, ARGS.val_train_ratio, overwrite=ARGS.overwrite)
-                for fb in ("depth", "width")
+                for fb in ("updown", "depth", "width")
             ]
 
 

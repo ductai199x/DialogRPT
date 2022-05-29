@@ -139,6 +139,7 @@ nsfw_words = set(
         "slut",
         "softcore",
         "sperm",
+        "squirt",
         "strip",
         "stroke",
         "sucky",
