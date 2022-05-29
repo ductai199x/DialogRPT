@@ -1037,7 +1037,8 @@ def split_by_root(path, p_test=0.10):
         "vali": [],
     }
     prev = None
-    n = 0
+    ntrain = 0
+    nvali = 0
 
     for set_ in datasets:
         with open(f"{path}.{set_}", "w", encoding="utf-8") as f:
@@ -1052,12 +1053,14 @@ def split_by_root(path, p_test=0.10):
         if root != prev:
             if np.random.random() < p_test:
                 set_ = "vali"
+                nvali += 1
             else:
                 set_ = "train"
+                ntrain += 1
         datasets[set_].append(line)
         prev = root
-        n += 1
-        if n % 1e6 == 0:
+
+        if (ntrain + nvali) % 1e6 == 0:
             for set_ in datasets:
                 if len(datasets[set_]) == 0:
                     continue
@@ -1065,7 +1068,7 @@ def split_by_root(path, p_test=0.10):
                     f.write("\n".join(datasets[set_]) + "\n")
                 datasets[set_] = []
 
-    print(f"Test vs. Val samples: {len(datasets['train'])}-{len(datasets['vali'])}")
+    print(f"Test vs. Val samples: {ntrain}-{nvali}")
     for set_ in datasets:
         if len(datasets[set_]) == 0:
             continue
