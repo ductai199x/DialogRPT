@@ -304,10 +304,7 @@ def extract_rc(date, print_pos, lock):
                 continue
 
             if "name" not in node:  # account for some changes in API
-                if "author_fullname" in node and node["author_fullname"] is not None:
-                    node["name"] = node["author_fullname"]
-                else:
-                    node["name"] = f"t3_{node['id']}"
+                node["name"] = f"t3_{node['id']}"
 
             if not all([k in node for k in kk]):
                 continue
@@ -385,10 +382,7 @@ def extract_rs(date, print_pos, lock):
                 continue
 
             if "name" not in root:  # account for some changes in API
-                if "author_fullname" in root and root["author_fullname"] is not None:
-                    root["name"] = root["author_fullname"]
-                else:
-                    root["name"] = f"t3_{root['id']}"
+                root["name"] = f"t3_{root['id']}"
 
             if not all([k in root for k in kk]):
                 continue
@@ -481,15 +475,14 @@ def extract_txt(sub, year, pos_queue, lock, tokenizer, result_queue, overwrite=T
         for line in open(path, "r", encoding="utf-8"):
             n += 1
             d = json.loads(line.strip("\n"))
-            if "name" not in d:
-                if "author_fullname" in d and d["author_fullname"] is not None:
-                    d["name"] = d["author_fullname"]
-                else:
-                    d["name"] = f"t3_{d['id']}"
-            if "name" in d and d["name"] in name_set:
-                continue
 
-            name_set.add(d["name"])
+            if "name" not in d:
+                d["name"] = f"t3_{d['id']}"
+            if d["name"] in name_set:
+                continue
+            else:
+                name_set.add(d["name"])
+            
             txt_ids = clean(d["body"])
             if txt_ids is not None:
                 txt, ids = txt_ids
@@ -509,14 +502,14 @@ def extract_txt(sub, year, pos_queue, lock, tokenizer, result_queue, overwrite=T
         for line in open(path, "r", encoding="utf-8"):
             n += 1
             d = json.loads(line.strip("\n"))
+
             if "name" not in d:
-                if "author_fullname" in d and d["author_fullname"] is not None:
-                    d["name"] = d["author_fullname"]
-                else:
-                    d["name"] = f"t3_{d['id']}"
+                d["name"] = f"t3_{d['id']}"
             if d["name"] in name_set:
                 continue
-            name_set.add(d["name"])
+            else:
+                name_set.add(d["name"])
+            
             txt_ids = clean(f"{d['title']} {d['selftext']}")
             if txt_ids is not None:
                 txt, ids = txt_ids
@@ -606,14 +599,14 @@ def extract_time(sub, year, pos_queue, lock, overwrite=True):
         for line in open(path, "r", encoding="utf-8"):
             n += 1
             d = json.loads(line.strip("\n"))
+
             if "name" not in d:
-                if "author_fullname" in d and d["author_fullname"] is not None:
-                    d["name"] = d["author_fullname"]
-                else:
-                    d["name"] = f"t3_{d['id']}"
+                d["name"] = f"t3_{d['id']}"
             if d["name"] in name_set:
                 continue
-            name_set.add(d["name"])
+            else:
+                name_set.add(d["name"])
+            
             t = d["created_utc"]
             lines.append(f"{d['name']}\t{t}")
             m += 1
@@ -662,10 +655,7 @@ def extract_feedback(sub, year, pos_queue, lock, overwrite=True):
         for line in open(path, "r", encoding="utf-8"):
             d = json.loads(line.strip("\n"))
             if "name" not in d:
-                if "author_fullname" in d and d["author_fullname"] is not None:
-                    d["name"] = d["author_fullname"]
-                else:
-                    d["name"] = f"t3_{d['id']}"
+                d["name"] = f"t3_{d['id']}"
             if "ups" in d:
                 updown[d["name"]] = d["ups"] - d["downs"]
             else:
