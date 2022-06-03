@@ -318,7 +318,7 @@ def extract_rc(date, print_pos, lock):
             if node["subreddit"] not in nodes:
                 nodes[node["subreddit"]] = []
                 edges[node["subreddit"]] = []
-            nodes[node["subreddit"]].append(line)
+            nodes[node["subreddit"]].append(json.dumps(node))
             edges[node["subreddit"]].append(f"{node['link_id']}\t{node['parent_id']}\t{node['name']}")
 
             m += 1
@@ -395,7 +395,7 @@ def extract_rs(date, print_pos, lock):
 
             if root["subreddit"] not in roots:
                 roots[root["subreddit"]] = []
-            roots[root["subreddit"]].append(line)
+            roots[root["subreddit"]].append(json.dumps(root))
 
             m += 1
             if n % 1e4 == 0:
@@ -476,8 +476,6 @@ def extract_txt(sub, year, pos_queue, lock, tokenizer, result_queue, overwrite=T
             n += 1
             d = json.loads(line.strip("\n"))
 
-            if "name" not in d:
-                d["name"] = f"t3_{d['id']}"
             if d["name"] in name_set:
                 continue
             else:
@@ -503,8 +501,6 @@ def extract_txt(sub, year, pos_queue, lock, tokenizer, result_queue, overwrite=T
             n += 1
             d = json.loads(line.strip("\n"))
 
-            if "name" not in d:
-                d["name"] = f"t3_{d['id']}"
             if d["name"] in name_set:
                 continue
             else:
@@ -566,7 +562,6 @@ def extract_trees(sub, year, pos_queue, lock, overwrite=True):
         pos_queue.put(pos)
         return
 
-    os.makedirs(dir, exist_ok=True)
     pickle.dump(trees, open(path_out, "wb"))
     print(f"[{sub:<30} {year:<7}] {len(trees)} trees {n/len(trees):.1f} nodes/tree")
     pos_queue.put(pos)
@@ -600,8 +595,6 @@ def extract_time(sub, year, pos_queue, lock, overwrite=True):
             n += 1
             d = json.loads(line.strip("\n"))
 
-            if "name" not in d:
-                d["name"] = f"t3_{d['id']}"
             if d["name"] in name_set:
                 continue
             else:
@@ -654,8 +647,6 @@ def extract_feedback(sub, year, pos_queue, lock, overwrite=True):
             continue
         for line in open(path, "r", encoding="utf-8"):
             d = json.loads(line.strip("\n"))
-            if "name" not in d:
-                d["name"] = f"t3_{d['id']}"
             if "ups" in d:
                 updown[d["name"]] = d["ups"] - d["downs"]
             else:
