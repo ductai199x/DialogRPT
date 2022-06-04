@@ -1,4 +1,6 @@
 # author: Xiang Gao at Microsoft Research AI NLP Group
+import shlex
+
 
 _cat_ = ' <-COL-> '
 #EOS_token = '_EOS_'   # old version, before Nov 8 2020
@@ -10,13 +12,14 @@ def download_model(path):
         return
     import os, subprocess
     if os.path.exists(path):
-        return
+        print("WARNING: Path to the model already exists. Overwriting.")
     links = dict()
     for k in ['updown', 'depth', 'width', 'human_vs_rand', 'human_vs_machine']:
-        links['restore/%s.pth'%k] = 'https://xiagnlp2.blob.core.windows.net/dialogrpt/%s.pth'%k
-    links['restore/medium_ft.pkl'] = 'https://convaisharables.blob.core.windows.net/lsp/multiref/medium_ft.pkl'
-    if path not in links:
-        return
-    cmd = [ 'wget', links[path], '-P', 'restore']
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-    process.communicate()
+        links['%s.pth'%k] = 'https://xiagnlp2.blob.core.windows.net/dialogrpt/%s.pth'%k
+    links['medium_ft.pkl'] = 'https://convaisharables.blob.core.windows.net/lsp/multiref/medium_ft.pkl'
+    print(links)
+    cmds = [f"wget -P '{path}' {links[model_name]}" for model_name in links ]
+    print("Running these commands:")
+    print('\n'.join(cmds))
+    processes = [subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE) for cmd in cmds]
+    [process.communicate() for process in processes]
