@@ -2,6 +2,7 @@ import itertools
 import time
 from multiprocessing import Event, Lock, Process, Queue, Semaphore, Manager, Value
 from queue import Empty as EmptyQueueException
+from typing import *
 
 import pandas as pd
 import numpy as np
@@ -32,7 +33,8 @@ class RedditResponseDataLoader:
         batch_size=64,
         num_workers=1,
         prefetch_batches=8,
-        total_num_samples=None,
+        total_num_samples: Union[int, None] = None,
+        purpose: Literal["gpt", "generic"] = "gpt",
         **kwargs,
     ):
         self.dataset_path = dataset_path
@@ -64,6 +66,11 @@ class RedditResponseDataLoader:
         self.input_lock = Lock()
         self.exit_event = Event()
         self.workers = []
+
+        if purpose == "gpt":
+            self.prepare_data = self.prepare_data_gpt
+        else:
+            self.prepare_data = self.prepare_data_generic
 
     def worker_fn(
         self,
@@ -97,7 +104,10 @@ class RedditResponseDataLoader:
         )
 
     def __len__(self):
-        return -(-self.total_num_samples // self.batch_size) # ceil without math
+        if self.total_num_samples is not None:
+            return -(-self.total_num_samples // self.batch_size)  # ceil without math
+        else:
+            return None
 
     def __iter__(self):
         self.dataset_iter.close()
@@ -139,7 +149,56 @@ class RedditResponseDataLoader:
                 continue
         return data
 
-    def prepare_data(self, batch: pd.DataFrame):
+    def prepare_data_generic(self, batch: pd.DataFrame):
+        # process the data
+        pos_replies = []
+        neg_replies = []
+        contexts = []
+        rpos_lens = []
+        rneg_lens = []
+        ctxt_lens = []
+        for ctxt, rpos, rneg in zip(
+            batch["context"].astype("str"),
+            batch["response_pos"].astype("str"),
+            batch["response_neg"].astype("str"),
+        ):
+            ctxt = np.fromstring(ctxt, dtype=int, sep=" ")[-self.max_ctxt_length :]
+            rpos = np.fromstring(rpos, dtype=int, sep=" ")
+            rneg = np.fromstring(rneg, dtype=int, sep=" ")
+            len_ctxt = len(ctxt)
+            pos_reply = rpos[: self.max_seq_length - len_ctxt]
+            neg_reply = rneg[: self.max_seq_length - len_ctxt]
+            len_rpos = len(pos_reply)
+            len_rneg = len(neg_reply)
+
+            pos_replies.append(pos_reply)
+            neg_replies.append(neg_reply)
+            contexts.append(ctxt)
+            rpos_lens.append(len_rpos)
+            rneg_lens.append(len_rneg)
+            ctxt_lens.append(len_ctxt)
+
+        score_pos = batch["response_pos_feedback"].to_numpy()
+        score_neg = batch["response_neg_feedback"].to_numpy()
+        rank_pos = batch["response_pos_norm_rank"].to_numpy()
+        rank_neg = batch["response_neg_norm_rank"].to_numpy()
+        hr_gap = batch["hour_gap"].to_numpy()
+
+        return {
+            "pos_replies": pos_replies,
+            "neg_replies": neg_replies,
+            "contexts": contexts,
+            "rpos_lens": rpos_lens,
+            "rneg_lens": rneg_lens,
+            "ctxt_lens": ctxt_lens,
+            "score_pos": score_pos,
+            "score_neg": score_neg,
+            "rank_pos": rank_pos,
+            "rank_neg": rank_neg,
+            "hr_gap": hr_gap,
+        }
+
+    def prepare_data_gpt(self, batch: pd.DataFrame):
         # process the data
         pos_samples = []
         neg_samples = []
@@ -226,8 +285,8 @@ if __name__ == "__main__":
         num_workers=num_workers,
         prefetch_batches=prefetch_batches,
     )
-    for i in range(3):
-        for i in tqdm(itertools.islice(dl, max_iter), miniters=200):
+    for epoch in range(3):
+        for batch in tqdm(itertools.islice(dl, max_iter), miniters=200):
             time.sleep(1e-2)
         # print(i)
         # print(type(i))

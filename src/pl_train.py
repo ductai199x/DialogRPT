@@ -27,19 +27,18 @@ class Scorer(torch.nn.Module):
         pos_score = self.score(pos_features).squeeze(-1)
         neg_score = self.score(neg_features).squeeze(-1)
 
-        # pos_score = torch.stack(
-        #     [
-        #         pos_score[i, batch["pos_atn_masks"][i] - 1]
-        #         for i in range(batch["pos_samples"].shape[0])
-        #     ]
-        # )
-
-        # neg_score = torch.stack(
-        #     [
-        #         neg_score[i, batch["neg_atn_masks"][i] - 1]
-        #         for i in range(batch["neg_samples"].shape[0])
-        #     ]
-        # )
+        pos_score = torch.stack(
+            [
+                pos_score[i, pos_atn_masks[i] - 1]
+                for i in range(pos_samples.shape[0])
+            ]
+        )
+        neg_score = torch.stack(
+            [
+                neg_score[i, neg_atn_masks[i] - 1]
+                for i in range(neg_samples.shape[0])
+            ]
+        )
 
         return pos_score, neg_score
 
@@ -70,9 +69,12 @@ class ScorerPLWrapper(LightningModule):
         pos_score, neg_score = self(
             batch["pos_samples"], batch["pos_atn_masks"], batch["neg_samples"], batch["neg_atn_masks"]
         )
-        probs = torch.exp(pos_score[:, [0, -1]]) / (
-            torch.exp(pos_score[:, [0, -1]]) + torch.exp(neg_score[:, [0, -1]])
+        probs = torch.exp(pos_score) / (
+            torch.exp(pos_score) + torch.exp(neg_score)
         )
+        # probs = torch.exp(pos_score[:, [0, -1]]) / (
+        #     torch.exp(pos_score[:, [0, -1]]) + torch.exp(neg_score[:, [0, -1]])
+        # )
         probs = probs.mean(dim=1)
         neg_ll = -torch.log(probs)
         target_ll = torch.clamp(1 - batch["rank_pos"] - 0.5, min=0.0)
@@ -95,9 +97,12 @@ class ScorerPLWrapper(LightningModule):
         pos_score, neg_score = self(
             batch["pos_samples"], batch["pos_atn_masks"], batch["neg_samples"], batch["neg_atn_masks"]
         )
-        probs = torch.exp(pos_score[:, [0, -1]]) / (
-            torch.exp(pos_score[:, [0, -1]]) + torch.exp(neg_score[:, [0, -1]])
+        probs = torch.exp(pos_score) / (
+            torch.exp(pos_score) + torch.exp(neg_score)
         )
+        # probs = torch.exp(pos_score[:, [0, -1]]) / (
+        #     torch.exp(pos_score[:, [0, -1]]) + torch.exp(neg_score[:, [0, -1]])
+        # )
         probs = probs.mean(dim=1)
         neg_ll = -torch.log(probs)
         target_ll = torch.clamp(1 - batch["rank_pos"] - 0.5, min=0.0)
@@ -118,15 +123,18 @@ class ScorerPLWrapper(LightningModule):
         pos_score, neg_score = self(
             batch["pos_samples"], batch["pos_atn_masks"], batch["neg_samples"], batch["neg_atn_masks"]
         )
-        probs = torch.exp(pos_score[:, [0, -1]]) / (
-            torch.exp(pos_score[:, [0, -1]]) + torch.exp(neg_score[:, [0, -1]])
+        probs = torch.exp(pos_score) / (
+            torch.exp(pos_score) + torch.exp(neg_score)
         )
+        # probs = torch.exp(pos_score[:, [0, -1]]) / (
+        #     torch.exp(pos_score[:, [0, -1]]) + torch.exp(neg_score[:, [0, -1]])
+        # )
         probs = probs.mean(dim=1)
-        neg_ll = -torch.log(probs)
-        target_ll = torch.clamp(1 - batch["rank_pos"] - 0.5, min=0.0)
-        loss = (neg_ll - target_ll).mean()
+        # neg_ll = -torch.log(probs)
+        # target_ll = torch.clamp(1 - batch["rank_pos"] - 0.5, min=0.0)
+        # loss = (neg_ll - target_ll).mean()
 
-        self.log("test_loss", loss)
+        self.log("test_loss", probs, on_epoch=True)
         self.test_acc(probs, targets)
         self.log(
             "test_acc",
@@ -148,15 +156,19 @@ class ScorerPLWrapper(LightningModule):
     def on_validation_epoch_start(self) -> None:
         self.val_acc.reset()
 
+    def on_test_epoch_start(self) -> None:
+        self.test_acc.reset()
+        self.test_spearman_coeff.reset()
+
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
         return [optimizer]
 
 
 if __name__ == "__main__":
-    ds_path = "/media/nas2/Tai/11-reddit-comments-dataset/data/out/updown/2013/vali.tsv"
-    batch_size = 32
-    prefetch_batches = batch_size // 2
+    ds_path = "/home/tai/1-workdir/11-dialog-rpt/data/out/updown/2013/vali.tsv"
+    batch_size = 192
+    prefetch_batches = min(batch_size // 2, 64)
     num_workers = 1
     dl = RedditResponseDataLoader(
         ds_path,
@@ -165,7 +177,7 @@ if __name__ == "__main__":
         prefetch_batches=prefetch_batches,
         total_num_samples=5489221,
     )
-    # dl = itertools.islice(dl, 30)
+    dl = itertools.islice(dl, 1000)
 
     model = ScorerPLWrapper()
     model_weights = torch.load("/media/nas2/Tai/11-reddit-comments-dataset/dialogrpt-model/updown.pth")
@@ -185,7 +197,7 @@ if __name__ == "__main__":
         enable_model_summary=True,
         logger=logger,
         callbacks=[
-            pl.callbacks.TQDMProgressBar(refresh_rate=1),
+            pl.callbacks.RichProgressBar(refresh_rate=1),
         ],
         fast_dev_run=False,
         limit_train_batches=1000,
