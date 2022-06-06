@@ -14,5 +14,6 @@ pyvenv.cfg
 etc/
 share/
 include/
+model/
 *scratch*
 *log*
