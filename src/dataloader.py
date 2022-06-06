@@ -1,4 +1,5 @@
 import itertools
+from lib2to3.pgen2 import token
 import time
 from multiprocessing import Event, Lock, Process, Queue, Semaphore, Manager, Value
 from queue import Empty as EmptyQueueException
@@ -35,8 +36,13 @@ class RedditResponseDataLoader:
         prefetch_batches=8,
         total_num_samples: Union[int, None] = None,
         purpose: Literal["gpt", "generic"] = "gpt",
+        need_tokenization=False,
+        tokenizer=None,
+        min_score_gap=0.0,
+        min_rank_gap=0.0,
         **kwargs,
     ):
+        assert need_tokenization ^ (tokenizer is None)
         self.dataset_path = dataset_path
         self.batch_size = batch_size
         self.num_workers = num_workers
@@ -67,10 +73,14 @@ class RedditResponseDataLoader:
         self.exit_event = Event()
         self.workers = []
 
+        self.need_tokenization = need_tokenization
+        self.tokenizer = tokenizer
         if purpose == "gpt":
             self.prepare_data = self.prepare_data_gpt
         else:
             self.prepare_data = self.prepare_data_generic
+        self.min_score_gap = min_score_gap
+        self.min_rank_gap = min_rank_gap
 
     def worker_fn(
         self,
@@ -162,9 +172,15 @@ class RedditResponseDataLoader:
             batch["response_pos"].astype("str"),
             batch["response_neg"].astype("str"),
         ):
-            ctxt = np.fromstring(ctxt, dtype=int, sep=" ")[-self.max_ctxt_length :]
-            rpos = np.fromstring(rpos, dtype=int, sep=" ")
-            rneg = np.fromstring(rneg, dtype=int, sep=" ")
+            if self.need_tokenization:
+                ctxt = self.tokenizer.encode(ctxt)[-self.max_ctxt_length :]
+                rpos = self.tokenizer.encode(rpos)
+                rneg = self.tokenizer.encode(rneg)
+            else:
+                ctxt = np.fromstring(ctxt, dtype=int, sep=" ")[-self.max_ctxt_length :]
+                rpos = np.fromstring(rpos, dtype=int, sep=" ")
+                rneg = np.fromstring(rneg, dtype=int, sep=" ")
+
             len_ctxt = len(ctxt)
             pos_reply = rpos[: self.max_seq_length - len_ctxt]
             neg_reply = rneg[: self.max_seq_length - len_ctxt]
@@ -183,6 +199,10 @@ class RedditResponseDataLoader:
         rank_pos = batch["response_pos_norm_rank"].to_numpy()
         rank_neg = batch["response_neg_norm_rank"].to_numpy()
         hr_gap = batch["hour_gap"].to_numpy()
+
+        mask_score_gap = (score_pos - score_neg) >= self.min_score_gap
+        mask_rank_gap = (rank_pos - rank_neg) >= self.min_rank_gap
+        mask = mask_score_gap & mask_rank_gap
 
         return {
             "pos_replies": pos_replies,
@@ -210,9 +230,14 @@ class RedditResponseDataLoader:
             batch["response_pos"].astype("str"),
             batch["response_neg"].astype("str"),
         ):
-            ctxt = np.fromstring(ctxt, dtype=int, sep=" ")[-self.max_ctxt_length :]
-            rpos = np.fromstring(rpos, dtype=int, sep=" ")
-            rneg = np.fromstring(rneg, dtype=int, sep=" ")
+            if self.need_tokenization:
+                ctxt = self.tokenizer.encode(ctxt)[-self.max_ctxt_length :]
+                rpos = self.tokenizer.encode(rpos)
+                rneg = self.tokenizer.encode(rneg)
+            else:
+                ctxt = np.fromstring(ctxt, dtype=int, sep=" ")[-self.max_ctxt_length :]
+                rpos = np.fromstring(rpos, dtype=int, sep=" ")
+                rneg = np.fromstring(rneg, dtype=int, sep=" ")
 
             pos_sample = [*ctxt, self.ix_EOS, *rpos][: self.max_seq_length]
             neg_sample = [*ctxt, self.ix_EOS, *rneg][: self.max_seq_length]
@@ -243,17 +268,21 @@ class RedditResponseDataLoader:
         rank_neg = torch.tensor(batch["response_neg_norm_rank"].to_numpy())
         hr_gap = torch.tensor(batch["hour_gap"].to_numpy())
 
+        mask_score_gap = (score_pos - score_neg) > self.min_score_gap
+        mask_rank_gap = (rank_pos - rank_neg) > self.min_rank_gap
+        mask = mask_score_gap & mask_rank_gap
+
         return {
-            "pos_samples": pos_samples,
-            "neg_samples": neg_samples,
-            "pos_atn_masks": pos_atn_masks,
-            "neg_atn_masks": neg_atn_masks,
-            "len_cxt": ctxt_lens,
-            "score_pos": score_pos,
-            "score_neg": score_neg,
-            "rank_pos": rank_pos,
-            "rank_neg": rank_neg,
-            "hr_gap": hr_gap,
+            "pos_samples": pos_samples[mask],
+            "neg_samples": neg_samples[mask],
+            "pos_atn_masks": pos_atn_masks[mask],
+            "neg_atn_masks": neg_atn_masks[mask],
+            "len_cxt": torch.tensor(ctxt_lens)[mask],
+            "score_pos": score_pos[mask],
+            "score_neg": score_neg[mask],
+            "rank_pos": rank_pos[mask],
+            "rank_neg": rank_neg[mask],
+            "hr_gap": hr_gap[mask],
         }
 
     def __del__(self):

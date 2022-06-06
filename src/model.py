@@ -96,8 +96,8 @@ class Scorer(ScorerBase):
 
     
     def load(self, path):
-        from shared import download_model
-        download_model(path)
+        # from shared import download_model
+        # download_model(path)
         print('loading from '+path)
         weights = torch.load(path, map_location=torch.device('cpu'))
         if path.endswith('.pkl'):

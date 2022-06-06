@@ -18,7 +18,7 @@ def download_model(path):
         links['%s.pth'%k] = 'https://xiagnlp2.blob.core.windows.net/dialogrpt/%s.pth'%k
     links['medium_ft.pkl'] = 'https://convaisharables.blob.core.windows.net/lsp/multiref/medium_ft.pkl'
     print(links)
-    cmds = [f"wget -P '{path}' {links[model_name]}" for model_name in links ]
+    cmds = [f"wget -q -P '{path}' {links[model_name]}" for model_name in links ]
     print("Running these commands:")
     print('\n'.join(cmds))
     processes = [subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE) for cmd in cmds]

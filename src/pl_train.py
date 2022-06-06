@@ -3,7 +3,7 @@ import torch
 import pytorch_lightning as pl
 from pytorch_lightning import LightningModule, Trainer
 from torchmetrics import Accuracy, SpearmanCorrCoef
-from transformers19 import GPT2Model, GPT2Config
+from transformers19 import GPT2Model, GPT2Config, GPT2Tokenizer
 from dataloader import *
 
 
@@ -29,13 +29,13 @@ class Scorer(torch.nn.Module):
 
         pos_score = torch.stack(
             [
-                pos_score[i, pos_atn_masks[i] - 1]
+                pos_score[i, pos_atn_masks[i].sum() - 1]
                 for i in range(pos_samples.shape[0])
             ]
         )
         neg_score = torch.stack(
             [
-                neg_score[i, neg_atn_masks[i] - 1]
+                neg_score[i, neg_atn_masks[i].sum() - 1]
                 for i in range(neg_samples.shape[0])
             ]
         )
@@ -123,19 +123,23 @@ class ScorerPLWrapper(LightningModule):
         pos_score, neg_score = self(
             batch["pos_samples"], batch["pos_atn_masks"], batch["neg_samples"], batch["neg_atn_masks"]
         )
-        probs = torch.exp(pos_score) / (
-            torch.exp(pos_score) + torch.exp(neg_score)
-        )
+        pos_score = torch.sigmoid(pos_score)
+        neg_score = torch.sigmoid(neg_score)
+        probs = pos_score - neg_score
+
+        # probs = torch.exp(pos_score) / (
+        #     torch.exp(pos_score) + torch.exp(neg_score)
+        # )
         # probs = torch.exp(pos_score[:, [0, -1]]) / (
         #     torch.exp(pos_score[:, [0, -1]]) + torch.exp(neg_score[:, [0, -1]])
         # )
-        probs = probs.mean(dim=1)
+        # probs = probs.mean(dim=1)
         # neg_ll = -torch.log(probs)
         # target_ll = torch.clamp(1 - batch["rank_pos"] - 0.5, min=0.0)
         # loss = (neg_ll - target_ll).mean()
 
-        self.log("test_loss", probs, on_epoch=True)
-        self.test_acc(probs, targets)
+        # self.log("test_loss", probs, on_epoch=True)
+        self.test_acc((probs > 0).float(), targets)
         self.log(
             "test_acc",
             self.test_acc,
@@ -143,7 +147,8 @@ class ScorerPLWrapper(LightningModule):
             on_step=True,
             prog_bar=True,
         )
-        self.test_spearman_coeff(probs, (batch["score_pos"] - batch["score_neg"]).float())
+        self.test_spearman_coeff(pos_score, (batch["rank_pos"]).float())
+        self.test_spearman_coeff(neg_score, (batch["rank_neg"]).float())
         self.log(
             "test_spearman_coeff",
             self.test_spearman_coeff,
@@ -168,21 +173,26 @@ class ScorerPLWrapper(LightningModule):
 if __name__ == "__main__":
     feedback = "updown"
     ds_path = f"/home/tai/1-workdir/11-dialog-rpt/data/test/human_feedback/{feedback}.tsv"
-    batch_size = 192
+    batch_size = 256
     prefetch_batches = min(batch_size // 2, 64)
-    num_workers = 1
+    min_score_gap = 20.0
+    min_rank_gap = 0.5
+    tokenizer = GPT2Tokenizer.from_pretrained("gpt2", padding=True, max_length=1024, truncation=True)
     dl = RedditResponseDataLoader(
         ds_path,
         batch_size=batch_size,
-        num_workers=num_workers,
         prefetch_batches=prefetch_batches,
         total_num_samples=99999,
+        need_tokenization=True,
+        tokenizer=tokenizer,
+        min_score_gap=min_score_gap,
+        min_rank_gap=min_rank_gap,
     )
-    # dl = itertools.islice(dl, 1000)
+    # dl = itertools.islice(dl, 99999)
 
     model = ScorerPLWrapper()
-    model_weights = torch.load(f"/media/nas2/Tai/11-reddit-comments-dataset/dialogrpt-model/{feedback}.pth")
-    model.model.load_state_dict(model_weights)
+    # model_weights = torch.load(f"/media/nas2/Tai/11-reddit-comments-dataset/dialogrpt-model/{feedback}.pth")
+    # model.model.load_state_dict(model_weights)
 
     logger = pl.loggers.TensorBoardLogger(
         save_dir="src/lightning_logs",
