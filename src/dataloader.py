@@ -269,12 +269,16 @@ class RedditResponseDataLoader:
             self.output_queue.close()
         finally:
             for w in self.workers:
-                if w.is_alive():  # manually terminate worker if all else fails
+                try:
                     w.terminate()
+                except:
+                    pass
+            self.workers.clear()
 
 
 if __name__ == "__main__":
-    ds_path = "data/out/width/2011/train.tsv"
+    feedback = "updown"
+    ds_path = f"/home/tai/1-workdir/11-dialog-rpt/data/test/human_feedback/{feedback}.tsv"
     batch_size = 10
     prefetch_batches = 3
     num_workers = 1

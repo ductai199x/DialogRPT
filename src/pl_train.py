@@ -166,7 +166,8 @@ class ScorerPLWrapper(LightningModule):
 
 
 if __name__ == "__main__":
-    ds_path = "/home/tai/1-workdir/11-dialog-rpt/data/out/updown/2013/vali.tsv"
+    feedback = "updown"
+    ds_path = f"/home/tai/1-workdir/11-dialog-rpt/data/test/human_feedback/{feedback}.tsv"
     batch_size = 192
     prefetch_batches = min(batch_size // 2, 64)
     num_workers = 1
@@ -175,12 +176,12 @@ if __name__ == "__main__":
         batch_size=batch_size,
         num_workers=num_workers,
         prefetch_batches=prefetch_batches,
-        total_num_samples=5489221,
+        total_num_samples=99999,
     )
-    dl = itertools.islice(dl, 1000)
+    # dl = itertools.islice(dl, 1000)
 
     model = ScorerPLWrapper()
-    model_weights = torch.load("/media/nas2/Tai/11-reddit-comments-dataset/dialogrpt-model/updown.pth")
+    model_weights = torch.load(f"/media/nas2/Tai/11-reddit-comments-dataset/dialogrpt-model/{feedback}.pth")
     model.model.load_state_dict(model_weights)
 
     logger = pl.loggers.TensorBoardLogger(
@@ -197,7 +198,7 @@ if __name__ == "__main__":
         enable_model_summary=True,
         logger=logger,
         callbacks=[
-            pl.callbacks.RichProgressBar(refresh_rate=1),
+            pl.callbacks.TQDMProgressBar(refresh_rate=1),
         ],
         fast_dev_run=False,
         limit_train_batches=1000,
