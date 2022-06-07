@@ -37,6 +37,7 @@ class RedditResponseDataLoader:
         total_num_samples: Union[int, None] = None,
         purpose: Literal["gpt", "generic"] = "gpt",
         need_tokenization=False,
+        decode_after=False,
         tokenizer=None,
         min_score_gap=0.0,
         min_rank_gap=0.0,
@@ -74,6 +75,7 @@ class RedditResponseDataLoader:
         self.workers = []
 
         self.need_tokenization = need_tokenization
+        self.decode_after = decode_after
         self.tokenizer = tokenizer
         if purpose == "gpt":
             self.prepare_data = self.prepare_data_gpt
@@ -110,7 +112,7 @@ class RedditResponseDataLoader:
             chunksize=self.batch_size,
             encoding="utf-8",
             engine="c",
-            on_bad_lines="warn",
+            on_bad_lines="skip",
         )
 
     def __len__(self):
@@ -187,6 +189,11 @@ class RedditResponseDataLoader:
             len_rpos = len(pos_reply)
             len_rneg = len(neg_reply)
 
+            if self.decode_after:
+                ctxt = self.tokenizer.decode(ctxt)
+                pos_reply = self.tokenizer.decode(pos_reply)
+                neg_reply = self.tokenizer.decode(neg_reply)
+
             pos_replies.append(pos_reply)
             neg_replies.append(neg_reply)
             contexts.append(ctxt)
@@ -205,17 +212,17 @@ class RedditResponseDataLoader:
         mask = mask_score_gap & mask_rank_gap
 
         return {
-            "pos_replies": pos_replies,
-            "neg_replies": neg_replies,
-            "contexts": contexts,
-            "rpos_lens": rpos_lens,
-            "rneg_lens": rneg_lens,
-            "ctxt_lens": ctxt_lens,
-            "score_pos": score_pos,
-            "score_neg": score_neg,
-            "rank_pos": rank_pos,
-            "rank_neg": rank_neg,
-            "hr_gap": hr_gap,
+            "pos_replies": np.array(pos_replies)[mask].tolist(),
+            "neg_replies": np.array(neg_replies)[mask].tolist(),
+            "contexts": np.array(contexts)[mask].tolist(),
+            "rpos_lens": np.array(rpos_lens)[mask],
+            "rneg_lens": np.array(rneg_lens)[mask],
+            "ctxt_lens": np.array(ctxt_lens)[mask],
+            "score_pos": score_pos[mask],
+            "score_neg": score_neg[mask],
+            "rank_pos": rank_pos[mask],
+            "rank_neg": rank_neg[mask],
+            "hr_gap": hr_gap[mask],
         }
 
     def prepare_data_gpt(self, batch: pd.DataFrame):
@@ -292,7 +299,10 @@ class RedditResponseDataLoader:
                 self.prefetch_semaphore.release()
 
             for w in self.workers:
-                w.join(timeout=5.0)
+                try:
+                    w.join(timeout=5.0)
+                except:
+                    pass
 
             self.output_queue.cancel_join_thread()
             self.output_queue.close()

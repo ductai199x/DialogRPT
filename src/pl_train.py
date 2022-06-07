@@ -171,11 +171,11 @@ class ScorerPLWrapper(LightningModule):
 
 
 if __name__ == "__main__":
-    feedback = "updown"
+    feedback = "depth"
     ds_path = f"/home/tai/1-workdir/11-dialog-rpt/data/test/human_feedback/{feedback}.tsv"
     batch_size = 256
     prefetch_batches = min(batch_size // 2, 64)
-    min_score_gap = 20.0
+    min_score_gap = 4.0
     min_rank_gap = 0.5
     tokenizer = GPT2Tokenizer.from_pretrained("gpt2", padding=True, max_length=1024, truncation=True)
     dl = RedditResponseDataLoader(
