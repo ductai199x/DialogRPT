@@ -1,3 +1,4 @@
+import pickle
 import numpy as np
 import scipy.sparse as sp
 import torch
@@ -102,66 +103,66 @@ def get_bow_baseline():
 
     test_acc = Accuracy(threshold=0)
     test_spearman_coeff = SpearmanCorrCoef()
-    # for feedback in ["updown", "width", "depth"]:
-    feedback = "updown"
+    for feedback in ["updown", "width", "depth"]:
 
-    test_acc.reset()
-    test_spearman_coeff.reset()
+        test_acc.reset()
+        test_spearman_coeff.reset()
 
-    # We gotta first fit the TfidfTransformer.
-    vectorizer = HashingVectorizer()
-    tfidf_transform = TfidfTransformer()
+        # We gotta first fit the TfidfTransformer.
+        vectorizer = HashingVectorizer()
+        tfidf_transform = TfidfTransformer()
 
-    train_dl = get_train_dataloader(feedback, year=2011)
-    for batch in tqdm(train_dl, desc=f"Fitting TfidfTransformer for {feedback}"):
-        pos_replies = batch["pos_replies"]
-        neg_replies = batch["neg_replies"]
-        contexts = batch["contexts"]
-        tfidf_transform.fit(vectorizer.transform(contexts + pos_replies + neg_replies))
+        train_dl = get_train_dataloader(feedback, year=2011)
+        for batch in tqdm(train_dl, desc=f"Fitting TfidfTransformer for {feedback}"):
+            pos_replies = batch["pos_replies"]
+            neg_replies = batch["neg_replies"]
+            contexts = batch["contexts"]
+            tfidf_transform.fit(vectorizer.fit_transform(contexts + pos_replies + neg_replies))
 
-    train_dl = get_train_dataloader(feedback, year=2012)
-    for batch in tqdm(train_dl, desc=f"Fitting TfidfTransformer for {feedback}"):
-        pos_replies = batch["pos_replies"]
-        neg_replies = batch["neg_replies"]
-        contexts = batch["contexts"]
-        tfidf_transform.fit(vectorizer.transform(contexts + pos_replies + neg_replies))
+        train_dl = get_train_dataloader(feedback, year=2012)
+        for batch in tqdm(train_dl, desc=f"Fitting TfidfTransformer for {feedback}"):
+            pos_replies = batch["pos_replies"]
+            neg_replies = batch["neg_replies"]
+            contexts = batch["contexts"]
+            tfidf_transform.fit(vectorizer.fit_transform(contexts + pos_replies + neg_replies))
 
-    test_dl = get_test_dataloader(feedback)
-    pbar = tqdm(total=len(test_dl), desc=f"BoW baseline for {feedback}")
-    for batch in test_dl:
-        rpos_rank = torch.tensor(batch["rank_pos"]).float()
-        rneg_rank = torch.tensor(batch["rank_neg"]).float()
-        pos_replies = batch["pos_replies"]
-        neg_replies = batch["neg_replies"]
-        contexts = batch["contexts"]
+        test_dl = get_test_dataloader(feedback)
+        pbar = tqdm(total=len(test_dl), desc=f"BoW baseline for {feedback}")
+        for batch in test_dl:
+            rpos_rank = torch.tensor(batch["rank_pos"]).float()
+            rneg_rank = torch.tensor(batch["rank_neg"]).float()
+            pos_replies = batch["pos_replies"]
+            neg_replies = batch["neg_replies"]
+            contexts = batch["contexts"]
 
-        preds = []
-        rpos_score = []
-        rneg_score = []
-        for ctxt, rpos, rneg in zip(contexts, pos_replies, neg_replies):
-            ctxt_mat = vectorize([ctxt])
-            resp_mat = vectorize([rpos, rneg])
-            sim_mat = ctxt_mat.dot(resp_mat.T).toarray()
-            pred = np.argmax(sim_mat, axis=1)[0]
+            preds = []
+            rpos_score = []
+            rneg_score = []
+            for ctxt, rpos, rneg in zip(contexts, pos_replies, neg_replies):
+                ctxt_mat = vectorize([ctxt])
+                resp_mat = vectorize([rpos, rneg])
+                sim_mat = ctxt_mat.dot(resp_mat.T).toarray()
+                pred = np.argmax(sim_mat, axis=1)[0]
 
-            preds.append(1 - pred)
-            rpos_score.append(sim_mat[0, 0])
-            rneg_score.append(sim_mat[0, 1])
+                preds.append(1 - pred)
+                rpos_score.append(sim_mat[0, 0])
+                rneg_score.append(sim_mat[0, 1])
 
-        targets = ((rpos_rank - rneg_rank) > 0).long()
-        test_acc.update(torch.tensor(preds), targets)
-        test_spearman_coeff.update(torch.tensor(rpos_score), rpos_rank)
-        test_spearman_coeff.update(torch.tensor(rneg_score), rneg_rank)
+            targets = ((rpos_rank - rneg_rank) > 0).long()
+            test_acc.update(torch.tensor(preds), targets)
+            test_spearman_coeff.update(torch.tensor(rpos_score), rpos_rank)
+            test_spearman_coeff.update(torch.tensor(rneg_score), rneg_rank)
 
-        pbar.set_postfix({"acc": float(test_acc.compute()), "spearman": float(test_spearman_coeff.compute())})
-        pbar.update()
+            pbar.set_postfix({"acc": float(test_acc.compute()), "spearman": float(test_spearman_coeff.compute())})
+            pbar.update()
 
-    print(
-            f"{'-'*10} BoW results for {feedback} {'-'*10}\n"
-            + f"Test acc: {float(test_acc.compute()):.4f}, "
-            + f"Test spearman: {float(test_spearman_coeff.compute()):.4f}\n"
-        )
-    return vectorizer, tfidf_transform
+        print(
+                f"{'-'*10} BoW results for {feedback} {'-'*10}\n"
+                + f"Test acc: {float(test_acc.compute()):.4f}, "
+                + f"Test spearman: {float(test_spearman_coeff.compute()):.4f}\n"
+            )
+        
+    # return vectorizer, tfidf_transform
 
 
-vectorizer, tfidf_transform = get_bow_baseline()
+get_bow_baseline()

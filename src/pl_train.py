@@ -27,20 +27,7 @@ class Scorer(torch.nn.Module):
         pos_score = self.score(pos_features).squeeze(-1)
         neg_score = self.score(neg_features).squeeze(-1)
 
-        pos_score = torch.stack(
-            [
-                pos_score[i, pos_atn_masks[i].sum() - 1]
-                for i in range(pos_samples.shape[0])
-            ]
-        )
-        neg_score = torch.stack(
-            [
-                neg_score[i, neg_atn_masks[i].sum() - 1]
-                for i in range(neg_samples.shape[0])
-            ]
-        )
-
-        return pos_score, neg_score
+        return pos_score.mean(dim=1), neg_score.mean(dim=1)
 
 
 class ScorerPLWrapper(LightningModule):
@@ -72,16 +59,14 @@ class ScorerPLWrapper(LightningModule):
         probs = torch.exp(pos_score) / (
             torch.exp(pos_score) + torch.exp(neg_score)
         )
-        # probs = torch.exp(pos_score[:, [0, -1]]) / (
-        #     torch.exp(pos_score[:, [0, -1]]) + torch.exp(neg_score[:, [0, -1]])
-        # )
-        probs = probs.mean(dim=1)
-        neg_ll = -torch.log(probs)
-        target_ll = torch.clamp(1 - batch["rank_pos"] - 0.5, min=0.0)
-        loss = (neg_ll - target_ll).mean()
 
-        self.log("train_loss", loss)
-        self.train_acc(probs, targets)
+        loss = -torch.log(probs)
+
+        with torch.no_grad():
+            preds = (torch.sigmoid(pos_score) - torch.sigmoid(neg_score)) > 0
+        self.train_acc(preds, targets)
+
+        self.log("train_loss", loss, on_epoch=True)
         self.log(
             "train_acc",
             self.train_acc,
@@ -100,16 +85,14 @@ class ScorerPLWrapper(LightningModule):
         probs = torch.exp(pos_score) / (
             torch.exp(pos_score) + torch.exp(neg_score)
         )
-        # probs = torch.exp(pos_score[:, [0, -1]]) / (
-        #     torch.exp(pos_score[:, [0, -1]]) + torch.exp(neg_score[:, [0, -1]])
-        # )
-        probs = probs.mean(dim=1)
-        neg_ll = -torch.log(probs)
-        target_ll = torch.clamp(1 - batch["rank_pos"] - 0.5, min=0.0)
-        loss = (neg_ll - target_ll).mean()
 
-        self.log("val_loss", loss)
-        self.val_acc(probs, targets)
+        loss = -torch.log(probs)
+
+        with torch.no_grad():
+            preds = (torch.sigmoid(pos_score) - torch.sigmoid(neg_score)) > 0
+        self.val_acc(preds, targets)
+
+        self.log("val_loss", loss, on_epoch=True)
         self.log(
             "val_acc",
             self.val_acc,
@@ -125,21 +108,11 @@ class ScorerPLWrapper(LightningModule):
         )
         pos_score = torch.sigmoid(pos_score)
         neg_score = torch.sigmoid(neg_score)
-        probs = pos_score - neg_score
 
-        # probs = torch.exp(pos_score) / (
-        #     torch.exp(pos_score) + torch.exp(neg_score)
-        # )
-        # probs = torch.exp(pos_score[:, [0, -1]]) / (
-        #     torch.exp(pos_score[:, [0, -1]]) + torch.exp(neg_score[:, [0, -1]])
-        # )
-        # probs = probs.mean(dim=1)
-        # neg_ll = -torch.log(probs)
-        # target_ll = torch.clamp(1 - batch["rank_pos"] - 0.5, min=0.0)
-        # loss = (neg_ll - target_ll).mean()
+        with torch.no_grad():
+            preds = (pos_score - neg_score) > 0
+        self.test_acc(preds, targets)
 
-        # self.log("test_loss", probs, on_epoch=True)
-        self.test_acc((probs > 0).float(), targets)
         self.log(
             "test_acc",
             self.test_acc,
@@ -191,8 +164,8 @@ if __name__ == "__main__":
     # dl = itertools.islice(dl, 99999)
 
     model = ScorerPLWrapper()
-    # model_weights = torch.load(f"/media/nas2/Tai/11-reddit-comments-dataset/dialogrpt-model/{feedback}.pth")
-    # model.model.load_state_dict(model_weights)
+    model_weights = torch.load(f"/media/nas2/Tai/11-reddit-comments-dataset/dialogrpt-model/{feedback}.pth")
+    model.model.load_state_dict(model_weights)
 
     logger = pl.loggers.TensorBoardLogger(
         save_dir="src/lightning_logs",

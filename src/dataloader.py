@@ -129,7 +129,7 @@ class RedditResponseDataLoader:
             for w in self.workers:
                 w.join(timeout=5.0)
             self.workers.clear()
-            self.output_queue._reset()
+        self.output_queue._reset()
         for _ in range(self.num_workers):
             worker = Process(
                 target=self.worker_fn,

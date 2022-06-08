@@ -32,14 +32,16 @@ class SimpleScorer(torch.nn.Module):
         self.pos_embedings = torch.nn.Embedding.from_pretrained(pretrained_pos_emb)
         self.pos_ids = torch.arange(0, seq_len).cuda()
 
-        self.classifier = torch.nn.Sequential(*[
+        self.classifier = torch.nn.Sequential(
             torch.nn.Linear(word_dim * seq_len, hidden_dim),
+            torch.nn.Dropout(0.3),
             torch.nn.ReLU(),
             torch.nn.BatchNorm1d(hidden_dim),
             torch.nn.Linear(hidden_dim, hidden_dim//2),
+            torch.nn.Dropout(0.2),
             torch.nn.ReLU(),
             torch.nn.Linear(hidden_dim//2, 1),
-        ])
+        )
 
         # --- your code ends here
 
@@ -105,7 +107,7 @@ class SimpleScorerPLWrapper(LightningModule):
             preds = (torch.sigmoid(pos_score) - torch.sigmoid(neg_score)) > 0
         self.train_acc(preds, targets)
 
-        self.log("train_loss", loss)
+        self.log("train_loss", loss, on_epoch=True)
         self.log(
             "train_acc",
             self.train_acc,
@@ -133,7 +135,7 @@ class SimpleScorerPLWrapper(LightningModule):
             preds = (torch.sigmoid(pos_score) - torch.sigmoid(neg_score)) > 0
         self.val_acc(preds, targets)
 
-        self.log("val_loss", loss)
+        self.log("val_loss", loss, on_epoch=True)
         self.log(
             "val_acc",
             self.val_acc,
@@ -179,7 +181,20 @@ class SimpleScorerPLWrapper(LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.SGD(self.parameters(), lr=self.lr)
-        return [optimizer]
+        steplr = torch.optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.5)
+        # reducelr = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=1)
+        return [optimizer], [steplr]
+        # return {
+        #     "optimizer": optimizer,
+        #     "lr_scheduler": {
+        #         "scheduler": reducelr,
+        #         "monitor": "val_loss_epoch",
+        #         "frequency": 1,
+        #         "interval": "epoch",
+        #         # If "monitor" references validation metrics, then "frequency" should be set to a
+        #         # multiple of "trainer.check_val_every_n_epoch".
+        #     },
+        # }
 
 
 if __name__ == "__main__":
@@ -193,7 +208,7 @@ if __name__ == "__main__":
         val_ds_path,
         batch_size=256,
         prefetch_batches=64,
-        total_num_samples=99999,
+        total_num_samples=None,
         need_tokenization=True,
         tokenizer=tokenizer,
         min_score_gap=min_score_gap,
@@ -203,7 +218,7 @@ if __name__ == "__main__":
         train_ds_path,
         batch_size=128,
         prefetch_batches=64,
-        total_num_samples=3340304,
+        total_num_samples=None,
         min_score_gap=min_score_gap,
         min_rank_gap=min_rank_gap,
     )
