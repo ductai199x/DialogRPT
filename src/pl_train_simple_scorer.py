@@ -28,17 +28,17 @@ class SimpleScorer(torch.nn.Module):
         word_dim = pretrained_word_emb.size(1)
 
         # --- your code starts here
-        self.word_embedings = torch.nn.Embedding.from_pretrained(pretrained_word_emb)
-        self.pos_embedings = torch.nn.Embedding.from_pretrained(pretrained_pos_emb)
+        self.word_embedings = torch.nn.Embedding.from_pretrained(pretrained_word_emb, freeze=True)
+        self.pos_embedings = torch.nn.Embedding.from_pretrained(pretrained_pos_emb, freeze=True)
         self.pos_ids = torch.arange(0, seq_len).cuda()
 
         self.classifier = torch.nn.Sequential(
-            torch.nn.Linear(word_dim * seq_len, hidden_dim),
-            torch.nn.Dropout(0.3),
+            torch.nn.Linear(word_dim, hidden_dim),
+            torch.nn.Dropout(0.5),
             torch.nn.ReLU(),
-            torch.nn.BatchNorm1d(hidden_dim),
+            torch.nn.BatchNorm1d(seq_len),
             torch.nn.Linear(hidden_dim, hidden_dim//2),
-            torch.nn.Dropout(0.2),
+            torch.nn.Dropout(0.5),
             torch.nn.ReLU(),
             torch.nn.Linear(hidden_dim//2, 1),
         )
@@ -54,10 +54,10 @@ class SimpleScorer(torch.nn.Module):
         seq1_emb = seq1_emb + pos_emb
         seq2_emb = seq2_emb + pos_emb
 
-        seq1_score = self.classifier(seq1_emb.flatten(1, -1))
-        seq2_score = self.classifier(seq2_emb.flatten(1, -1))
+        seq1_score = self.classifier(seq1_emb).mean(dim=1)
+        seq2_score = self.classifier(seq2_emb).mean(dim=1)
 
-        return seq1_score.squeeze(-1), seq2_score.squeeze(-1)
+        return seq1_score.squeeze(), seq2_score.squeeze()
 
 
 class SimpleScorerPLWrapper(LightningModule):
@@ -76,7 +76,7 @@ class SimpleScorerPLWrapper(LightningModule):
             hidden_dim=hidden_dim,
         )
 
-        self.lr = 1e-2
+        self.lr = 1e-4
 
         self.train_acc = Accuracy()
         self.val_acc = Accuracy()
@@ -91,6 +91,7 @@ class SimpleScorerPLWrapper(LightningModule):
         return self.model(ps, ns)
 
     def training_step(self, batch, batch_idx):
+        if len(batch["score_pos"]) < 2: return 0
         targets = ((batch["score_pos"] - batch["score_neg"]) > 0).long().to(self.device)
         pos_score, neg_score = self(
             batch["pos_samples"], batch["neg_samples"]
@@ -105,7 +106,7 @@ class SimpleScorerPLWrapper(LightningModule):
 
         with torch.no_grad():
             preds = (torch.sigmoid(pos_score) - torch.sigmoid(neg_score)) > 0
-        self.train_acc(preds, targets)
+        self.train_acc(preds.float(), targets)
 
         self.log("train_loss", loss, on_epoch=True)
         self.log(
@@ -119,6 +120,7 @@ class SimpleScorerPLWrapper(LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
+        if len(batch["score_pos"]) < 2: return
         targets = ((batch["score_pos"] - batch["score_neg"]) > 0).long().to(self.device)
         pos_score, neg_score = self(
             batch["pos_samples"], batch["neg_samples"]
@@ -133,7 +135,7 @@ class SimpleScorerPLWrapper(LightningModule):
 
         with torch.no_grad():
             preds = (torch.sigmoid(pos_score) - torch.sigmoid(neg_score)) > 0
-        self.val_acc(preds, targets)
+        self.val_acc(preds.float(), targets)
 
         self.log("val_loss", loss, on_epoch=True)
         self.log(
@@ -145,6 +147,7 @@ class SimpleScorerPLWrapper(LightningModule):
         )
 
     def test_step(self, batch, batch_idx):
+        if len(batch["score_pos"]) < 2: return
         targets = ((batch["score_pos"] - batch["score_neg"]) > 0).long().to(self.device)
         pos_score, neg_score = self(
             batch["pos_samples"], batch["neg_samples"]
@@ -152,8 +155,9 @@ class SimpleScorerPLWrapper(LightningModule):
         pos_score = torch.sigmoid(pos_score)
         neg_score = torch.sigmoid(neg_score)
         probs = pos_score - neg_score
+        preds = (probs > 0).float()
 
-        self.test_acc((probs > 0).float(), targets)
+        self.test_acc(preds, targets)
         self.log(
             "test_acc",
             self.test_acc,
@@ -181,7 +185,7 @@ class SimpleScorerPLWrapper(LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.SGD(self.parameters(), lr=self.lr)
-        steplr = torch.optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.5)
+        steplr = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.5)
         # reducelr = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=1)
         return [optimizer], [steplr]
         # return {
@@ -230,10 +234,11 @@ if __name__ == "__main__":
 
     model = SimpleScorerPLWrapper(
         trsf_word_emb,
-        trsf_pos_emb
+        trsf_pos_emb,
+        hidden_dim=1024,
     )
 
-    max_epochs = 10
+    max_epochs = 30
     log_dir = "src/lightning_logs"
     model_name = "simple-scorer"
     version = "version_0"
@@ -244,7 +249,7 @@ if __name__ == "__main__":
         name=model_name,
         log_graph=True,
     )
-
+    lr_monitor = LearningRateMonitor(logging_interval="step")
     model_ckpt = ModelCheckpoint(
         dirpath=f"{log_dir}/{model_name}/{version}/checkpoints",
         monitor="val_acc",
@@ -260,12 +265,13 @@ if __name__ == "__main__":
         max_epochs=max_epochs,
         resume_from_checkpoint=None,
         enable_model_summary=True,
+        weights_summary="full",
         logger=logger,
         callbacks=[
-            TQDMProgressBar(refresh_rate=50), model_ckpt,
+            TQDMProgressBar(refresh_rate=50), model_ckpt, lr_monitor,
         ],
         fast_dev_run=False,
     )
 
     trainer.fit(model, train_dl, val_dl)
-    # trainer.test(model, val_dl)
+    trainer.test(model, val_dl)

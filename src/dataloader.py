@@ -122,14 +122,19 @@ class RedditResponseDataLoader:
             return None
 
     def __iter__(self):
-        self.dataset_iter.close()
+        if self.dataset_iter is not None:
+            self.dataset_iter.close()
         self.dataset_iter = self.get_dataset_iter()
+        for w in self.workers:
+            w.join(timeout=5.0)
+        self.workers.clear()
+        while True:
+            try:
+                self.output_queue.get(timeout=1e-6)
+            except EmptyQueueException:
+                break
         self.exit_event.clear()
-        if len(self.workers) > 0:
-            for w in self.workers:
-                w.join(timeout=5.0)
-            self.workers.clear()
-        self.output_queue._reset()
+        self.prefetch_semaphore.release()
         for _ in range(self.num_workers):
             worker = Process(
                 target=self.worker_fn,

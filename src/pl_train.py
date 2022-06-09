@@ -111,6 +111,7 @@ class ScorerPLWrapper(LightningModule):
 
         with torch.no_grad():
             preds = (pos_score - neg_score) > 0
+
         self.test_acc(preds, targets)
 
         self.log(
