@@ -60,6 +60,7 @@ class SimpleScorer(torch.nn.Module):
 class SimpleScorerPLWrapper(LightningModule):
     def __init__(
         self,
+        model,
         pretrained_word_emb: torch.Tensor,
         pretrained_pos_emb: torch.Tensor,
         seq_len=50,
@@ -67,7 +68,7 @@ class SimpleScorerPLWrapper(LightningModule):
         lr=1e-4,
     ):
         super().__init__()
-        self.model = SimpleScorer(
+        self.model = model(
             pretrained_word_emb,
             pretrained_pos_emb,
             seq_len=seq_len,
