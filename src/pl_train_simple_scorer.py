@@ -27,7 +27,6 @@ class SimpleScorer(torch.nn.Module):
         # from our embedding tensor!
         word_dim = pretrained_word_emb.size(1)
 
-        # --- your code starts here
         self.word_embedings = torch.nn.Embedding.from_pretrained(pretrained_word_emb, freeze=True)
         self.pos_embedings = torch.nn.Embedding.from_pretrained(pretrained_pos_emb, freeze=True)
         self.pos_ids = torch.arange(0, seq_len).cuda()
@@ -38,12 +37,10 @@ class SimpleScorer(torch.nn.Module):
             torch.nn.ReLU(),
             torch.nn.BatchNorm1d(seq_len),
             torch.nn.Linear(hidden_dim, hidden_dim//2),
-            torch.nn.Dropout(0.5),
+            torch.nn.Dropout(0.25),
             torch.nn.ReLU(),
             torch.nn.Linear(hidden_dim//2, 1),
         )
-
-        # --- your code ends here
 
     def forward(self, seq1, seq2):
         # --- your code starts here
@@ -67,6 +64,7 @@ class SimpleScorerPLWrapper(LightningModule):
         pretrained_pos_emb: torch.Tensor,
         seq_len=50,
         hidden_dim=1024,
+        lr=1e-4,
     ):
         super().__init__()
         self.model = SimpleScorer(
@@ -76,7 +74,7 @@ class SimpleScorerPLWrapper(LightningModule):
             hidden_dim=hidden_dim,
         )
 
-        self.lr = 1e-4
+        self.lr = lr
 
         self.train_acc = Accuracy()
         self.val_acc = Accuracy()
@@ -91,7 +89,7 @@ class SimpleScorerPLWrapper(LightningModule):
         return self.model(ps, ns)
 
     def training_step(self, batch, batch_idx):
-        if len(batch["score_pos"]) < 2: return 0
+        if len(batch["score_pos"]) < 2: return None
         targets = ((batch["score_pos"] - batch["score_neg"]) > 0).long().to(self.device)
         pos_score, neg_score = self(
             batch["pos_samples"], batch["neg_samples"]
@@ -185,26 +183,26 @@ class SimpleScorerPLWrapper(LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.SGD(self.parameters(), lr=self.lr)
-        steplr = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.5)
-        # reducelr = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=1)
-        return [optimizer], [steplr]
-        # return {
-        #     "optimizer": optimizer,
-        #     "lr_scheduler": {
-        #         "scheduler": reducelr,
-        #         "monitor": "val_loss_epoch",
-        #         "frequency": 1,
-        #         "interval": "epoch",
-        #         # If "monitor" references validation metrics, then "frequency" should be set to a
-        #         # multiple of "trainer.check_val_every_n_epoch".
-        #     },
-        # }
+        # steplr = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.75)
+        reducelr = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="max", factor=0.7, patience=1)
+        # return [optimizer], [steplr]
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": reducelr,
+                "monitor": "val_acc_epoch",
+                "frequency": 1,
+                "interval": "epoch",
+                # If "monitor" references validation metrics, then "frequency" should be set to a
+                # multiple of "trainer.check_val_every_n_epoch".
+            },
+        }
 
 
 if __name__ == "__main__":
-    feedback = "updown"
+    feedback = "depth"
     val_ds_path = f"/home/tai/1-workdir/11-dialog-rpt/data/test/human_feedback/{feedback}.tsv"
-    train_ds_path = f"/home/tai/1-workdir/11-dialog-rpt/data/out/{feedback}/2012/train.tsv"
+    train_ds_path = f"/home/tai/1-workdir/11-dialog-rpt/data/out/{feedback}/train.tsv"
     min_score_gap = 20.0
     min_rank_gap = 0.5
     tokenizer = GPT2Tokenizer.from_pretrained("gpt2", padding=True, max_length=1024, truncation=True)
@@ -232,16 +230,10 @@ if __name__ == "__main__":
     trsf_word_emb = model_weights['transformer.wte.weight'].clone()
     trsf_pos_emb = model_weights['transformer.wpe.weight'].clone()
 
-    model = SimpleScorerPLWrapper(
-        trsf_word_emb,
-        trsf_pos_emb,
-        hidden_dim=1024,
-    )
-
     max_epochs = 30
     log_dir = "src/lightning_logs"
     model_name = "simple-scorer"
-    version = "version_0"
+    version = "version_0.3"
 
     logger = TensorBoardLogger(
         save_dir=log_dir,
@@ -260,10 +252,22 @@ if __name__ == "__main__":
         mode="max",
     )
 
+    # prev_ckpt = "src/lightning_logs/simple-scorer/version_0.2/checkpoints/simple-scorer-epoch=15-val_acc=0.6132.ckpt"
+    prev_ckpt = None
+    resume = False
+
+    model = SimpleScorerPLWrapper(
+        trsf_word_emb,
+        trsf_pos_emb,
+        hidden_dim=1024,
+    )
+    if prev_ckpt is not None:
+        model = model.load_from_checkpoint(prev_ckpt)
+
     trainer = Trainer(
         gpus=1,
         max_epochs=max_epochs,
-        resume_from_checkpoint=None,
+        resume_from_checkpoint=prev_ckpt if resume else None,
         enable_model_summary=True,
         weights_summary="full",
         logger=logger,
@@ -273,5 +277,10 @@ if __name__ == "__main__":
         fast_dev_run=False,
     )
 
-    trainer.fit(model, train_dl, val_dl)
-    trainer.test(model, val_dl)
+    try:
+        trainer.fit(model, train_dl, val_dl)
+        trainer.test(model, val_dl)
+    except (Exception) as e:
+        raise Exception('Smelly socks').with_traceback(e.__traceback__)
+    finally:
+        del train_dl, val_dl
