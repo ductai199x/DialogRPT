@@ -14,30 +14,13 @@ class LSTM(nn.Module):
                 lstm_layers = 3,
                 word_dropout = 0.1, 
                 pred_dropout = 0.1,
-                bidirectional = True
+                bidirectional = False
                 ):
-        """
-        The constructor for CNN_NLP class.
-
-        Args:
-            pretrained_embedding (torch.Tensor): Pretrained embeddings with
-                shape (vocab_size, embed_dim)
-            freeze_embedding (bool): Set to False to fine-tune pretraiend
-                vectors. Default: False
-            vocab_size (int): Need to be specified when not pretrained word
-                embeddings are not used.
-            embed_dim (int): Dimension of word vectors. Need to be specified
-                when pretrained word embeddings are not used. Default: 300
-            filter_sizes (List[int]): List of filter sizes. Default: [3, 4, 5]
-            num_filters (List[int]): List of number of filters, has the same
-                length as `filter_sizes`. Default: [100, 100, 100]
-            n_classes (int): Number of classes. Default: 2
-            dropout (float): Dropout rate. Default: 0.5
-        """
 
         super(LSTM, self).__init__()
         # Embedding layer
-
+        hidden_dim = 512
+        self.num_directions = 2 if bidirectional else 1
         word_dim = pretrained_word_emb.size(1)
         self.word_embedings = torch.nn.Embedding.from_pretrained(pretrained_word_emb, freeze=True)
         self.pos_embedings = torch.nn.Embedding.from_pretrained(pretrained_pos_emb, freeze=True)
@@ -46,7 +29,7 @@ class LSTM(nn.Module):
         self._lstm = torch.nn.LSTM(word_dim, hidden_dim, num_layers = lstm_layers, bidirectional = bidirectional, batch_first=True)
         self._ReLU = torch.nn.ReLU()
         self._pred_dropout = torch.nn.Dropout(pred_dropout)
-        self._pred = torch.nn.Linear(hidden_dim*2, 1, bias=False)
+        self._pred = torch.nn.Linear(hidden_dim, 1, bias=False)
 
 
 
