@@ -23,6 +23,7 @@ class ScorerPLWrapper(LightningModule):
         seq_len=50,
         hidden_dim=1024,
         lr=1e-4,
+        device="cuda",
     ):
         super().__init__()
         self.model = model(
@@ -30,6 +31,7 @@ class ScorerPLWrapper(LightningModule):
             pretrained_pos_emb,
             seq_len=seq_len,
             hidden_dim=hidden_dim,
+            device=device,
         )
 
         self.lr = lr

@@ -127,7 +127,7 @@ def train():
     )
 
     trainer = Trainer(
-        gpus=1 if ARGS.cpu else 0,
+        gpus=0 if ARGS.cpu else 1,
         max_epochs=ARGS.max_epoch,
         enable_model_summary=True,
         logger=logger,
@@ -152,7 +152,7 @@ def evaluate():
     val_dl = get_testing_data()
     model = get_model()
     trainer = Trainer(
-        gpus=1 if ARGS.cpu else 0,
+        gpus=0 if ARGS.cpu else 1,
         enable_model_summary=True,
         weights_summary="full",
         logger=None,
@@ -161,6 +161,7 @@ def evaluate():
         ],
         fast_dev_run=False,
     )
+
     try:
         trainer.test(model, val_dl)
     except (Exception) as e:
