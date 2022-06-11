@@ -156,7 +156,7 @@ The pairwise accuracy and Spearman correlation scores on 5,000 test samples are 
 |          | CNN with GPT-2 Embeddings            |        0.6653 |          0.2170 |
 |          | LSTM with GPT-2 Embeddings           |        0.6502 |          0.1942 |
 | Depth    | FullyConnected with GloVe Embeddings |        0.3667 |         -0.0864 |
-|          | FullyConnected with GPT-2 Embeddings |        0.6673 |          0.1957 |
+|          | FullyConnected with GPT-2 Embeddings |        0.6077 |          0.1388 |
 |          | CNN with GPT-2 Embeddings            |        0.6070 |          0.1410 |
 |          | LSTM with GPT-2 Embeddings           |        0.5969 |          0.1285 |
 | Updown   | FullyConnected with GloVe Embeddings |        0.5444 |          0.0532 |
