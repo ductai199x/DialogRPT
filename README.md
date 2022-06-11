@@ -104,6 +104,8 @@ optional arguments:
 ```
 To view the available architecture for each functionality (`train,eval,predict`), run `python src/main.py <function> -h`.
 
+**NOTE**: *If you don't have a GPU enabled device, then run the follow commands with `--cpu`.*
+
 ### Training
 For example, to train the fully connected model on the updown set, run:
 ```

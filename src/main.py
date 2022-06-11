@@ -126,7 +126,7 @@ def train():
     )
 
     trainer = Trainer(
-        gpus=1,
+        gpus=1 if ARGS.cpu else 0,
         max_epochs=ARGS.max_epoch,
         enable_model_summary=True,
         logger=logger,
@@ -151,7 +151,7 @@ def evaluate():
     val_dl = get_testing_data()
     model = get_model()
     trainer = Trainer(
-        gpus=1,
+        gpus=1 if ARGS.cpu else 0,
         enable_model_summary=True,
         weights_summary="full",
         logger=None,
@@ -199,7 +199,7 @@ def predict():
     sample2_atn_mask = torch.tensor(sample2_atn_mask, dtype=torch.long).unsqueeze(0).cuda()
 
     pl_model = get_model()
-    model = pl_model.model.eval().cuda()
+    model = pl_model.model.eval().to("cpu" if ARGS.cpu else "cuda")
     with torch.no_grad():
         if ARGS.arch != "RPT":
             score1, score2 = model(sample1, sample2)
@@ -217,6 +217,12 @@ def parse_args():
     global ARGS
     ## TRAINING SUBPARSER
     train_subparser = subparsers.add_parser("train", help="Train existing architectures.")
+    train_subparser.add_argument(
+        "--cpu",
+        help="Run on CPU",
+        action="store_true",
+        default=True,
+    )
     train_subparser.add_argument(
         "--rootdir",
         help="Specify the root dir of the training data. Default to '.'",
@@ -248,6 +254,12 @@ def parse_args():
     ## EVALUATING SUBPARSER
     eval_subparser = subparsers.add_parser("eval", help="Evaluate existing architectures.")
     eval_subparser.add_argument(
+        "--cpu",
+        help="Run on CPU",
+        action="store_true",
+        default=True,
+    )
+    eval_subparser.add_argument(
         "--rootdir",
         help="Specify the root dir of the evaluation data. Default to '.'",
         type=str,
@@ -271,6 +283,12 @@ def parse_args():
 
     ## PREDICTING SUBPARSER
     pred_subparser = subparsers.add_parser("predict", help="Predict using existing architectures.")
+    pred_subparser.add_argument(
+        "--cpu",
+        help="Run on CPU",
+        action="store_true",
+        default=True,
+    )
     pred_subparser.add_argument(
         "--rootdir",
         help="Specify the root dir of the project. Default to '.'",
