@@ -68,7 +68,7 @@ python src/data.py -y 2012 -j
 # Step 3. extract basic attributes and dialog trees.
 
 python src/data.py -y 2011 -b
-python src/data.py -y 2011 -b
+python src/data.py -y 2012 -b
 
 # Step 4. Build training and testing data for different feedback signals. 
 
