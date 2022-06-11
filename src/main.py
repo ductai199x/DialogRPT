@@ -71,7 +71,7 @@ def get_model() -> LightningModule:
     if ARGS.arch == "FC-GPT":
         model_class = FullyConnectedScorer
     elif ARGS.arch == "FC-GLOVE":
-        model_class = FullyConnectedScorer
+        raise NotImplementedError
     elif ARGS.arch == "CNN":
         model_class = CNNScorer
     elif ARGS.arch == "LSTM":

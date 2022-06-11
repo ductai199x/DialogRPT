@@ -27,9 +27,10 @@ _06/10/2022_
   - [Requirements](#requirements)
   - [Installation](#installation)
   - [Usage](#usage)
+    - [Training](#training)
+    - [Evaluating](#evaluating)
+    - [Predicting](#predicting)
   - [Data](#data)
-  - [Training](#training)
-  - [Evaluation](#evaluation)
   - [Results and Discussion](#results-and-discussion)
   - [Limitations/Challenges](#limitationschallenges)
 
@@ -103,11 +104,20 @@ optional arguments:
 ```
 To view the available architecture for each functionality (`train,eval,predict`), run `python src/main.py <function> -h`.
 
+### Training
+For example, to train the fully connected model on the updown set, run:
+```
+python src/main.py train --arch "FC-GPT" --feedback "updown"
+```
+
+### Evaluating
+
 For example, to evaluate the fully connected model on the updown set, run:
 ```
 python src/main.py eval --arch "FC-GPT" --feedback "updown"
 ```
 
+### Predicting
 For example, to predict with the context of "Can we restart 2020?", seq1 of "I think we should go back to the beginning, and start from the beginning." and seq2 of "I think so, yes.", run :
 ```
 python src/main.py predict --arch "RPT" --feedback "updown" --context="Can we restart 2020?" --seq1="I think we should go back to the beginning, and start from the beginning." --seq2="I think so, yes."
@@ -119,21 +129,11 @@ Training dataset can be built with [this script](https://github.com/ductai199x/D
 
 Testing data can be downloaded using the command in the #7 of the [Installation](#installation) section
 
-## Training
-
-Train and evaluate the models:
-
-FullyConnected with Glove Embedding
-
-FullyConnected with GPT Embedding
-
-
-TODO: WE NEED THIS
-
-Note: Due to the limited storage and limited time, we are unable to upload the fullyconnected-glove models to the shared directory. Please contact us directly for further information. 
-## Evaluation
 
 ## Results and Discussion
+
+**NOTE**: *Due to the limited storage and limited time, we are unable to upload the fullyconnected-glove models to the shared directory. Please contact us directly for further information.*
+
 The pairwise accuracy and Spearman correlation scores on 5,000 test samples are listed in the tables below.
 
 **Baseline Models**
@@ -161,6 +161,7 @@ The pairwise accuracy and Spearman correlation scores on 5,000 test samples are 
 |          | FullyConnected with GPT-2 Embeddings |        0.6122 |          0.1043 |
 |          | CNN with GPT-2 Embeddings            |        0.5972 |          0.0921 |
 |          | LSTM with GPT-2 Embeddings           |        0.5648 |          0.0573 |
+
 
 
 
