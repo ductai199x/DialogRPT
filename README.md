@@ -125,9 +125,11 @@ python src/main.py predict --arch "RPT" --feedback "updown" --context="Can we re
 
 ## Data
 
-Training dataset can be built with [this script](https://github.com/ductai199x/DialogRPT/blob/master/data.sh), which downloads data from a [third party dump](https://files.pushshift.io/reddit/). This will download ~44 G of compressed data. The script also builds pairs of comments for classification tasks using the data.py module.
+In order to obtain the data for this project, run `python src/downloader.py -h` to see the usage and help for downloading the compressed **raw** data. Then, process the downloaded raw data with `python src/data.py` (`-h` to see usage and help messages).
 
-Testing data can be downloaded using the command in the #7 of the [Installation](#installation) section
+Overall, this will download ~44 G of compressed data. 
+
+The testing data can be downloaded using the command in the #7 of the [Installation](#installation) section
 
 
 ## Results and Discussion
