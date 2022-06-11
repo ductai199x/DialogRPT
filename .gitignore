@@ -1,6 +1,7 @@
 
 *.pyc
 *.pth
+*.pkl
 out/
 data/
 .vscode/
