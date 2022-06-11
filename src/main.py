@@ -195,10 +195,10 @@ def predict():
     sample1_atn_mask = [1] * len_seq1 + [0] * (max_seq_length - len_seq1)
     sample2_atn_mask = [1] * len_seq2 + [0] * (max_seq_length - len_seq2)
 
-    sample1 = torch.tensor(sample1, dtype=torch.long).unsqueeze(0).cuda()
-    sample2 = torch.tensor(sample2, dtype=torch.long).unsqueeze(0).cuda()
-    sample1_atn_mask = torch.tensor(sample1_atn_mask, dtype=torch.long).unsqueeze(0).cuda()
-    sample2_atn_mask = torch.tensor(sample2_atn_mask, dtype=torch.long).unsqueeze(0).cuda()
+    sample1 = torch.tensor(sample1, dtype=torch.long).unsqueeze(0).to("cpu" if ARGS.cpu else "cuda")
+    sample2 = torch.tensor(sample2, dtype=torch.long).unsqueeze(0).to("cpu" if ARGS.cpu else "cuda")
+    sample1_atn_mask = torch.tensor(sample1_atn_mask, dtype=torch.long).unsqueeze(0).to("cpu" if ARGS.cpu else "cuda")
+    sample2_atn_mask = torch.tensor(sample2_atn_mask, dtype=torch.long).unsqueeze(0).to("cpu" if ARGS.cpu else "cuda")
 
     pl_model = get_model()
     model = pl_model.model.eval().to("cpu" if ARGS.cpu else "cuda")
