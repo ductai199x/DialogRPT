@@ -61,7 +61,7 @@ def get_model() -> LightningModule:
     weights_path = os.path.abspath(f"{ARGS.rootdir}/restore/{ARGS.feedback}.pth")
     if not os.path.exists(weights_path):
         download_model(f"{ARGS.rootdir}/restore", False)
-    model_weights = torch.load(weights_path)
+    model_weights = torch.load(weights_path, map_location="cpu" if ARGS.cpu else "cuda")
     trsf_word_emb = model_weights['transformer.wte.weight'].clone()
     trsf_pos_emb = model_weights['transformer.wpe.weight'].clone()
 
