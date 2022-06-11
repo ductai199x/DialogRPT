@@ -32,10 +32,12 @@ docutils==0.18.1
 entrypoints==0.4
 executing==0.8.3
 fastjsonschema==2.15.3
+filelock==3.7.1
 fonttools==4.33.3
 frozenlist==1.3.0
 fsspec==2022.5.0
 future==0.18.2
+gdown==4.4.0
 google-auth==2.6.6
 google-auth-oauthlib==0.4.6
 grpcio==1.46.3
@@ -49,6 +51,7 @@ iterable-queue==1.2.2
 jedi==0.18.1
 Jinja2==3.1.2
 jmespath==1.0.0
+joblib==1.1.0
 jsonschema==4.5.1
 jupyter-client==7.3.1
 jupyter-core==4.10.0
@@ -92,6 +95,7 @@ pyDeprecate==0.3.2
 Pygments==2.12.0
 pyparsing==3.0.9
 pyrsistent==0.18.1
+PySocks==1.7.1
 python-dateutil==2.8.2
 pytorch-lightning==1.6.3
 pytz==2022.1
@@ -104,9 +108,11 @@ requests-oauthlib==1.3.1
 rich==12.4.1
 rsa==4.8
 s3transfer==0.5.2
+scikit-learn==1.1.1
 scipy==1.8.0
 Send2Trash==1.8.0
 six==1.16.0
+sklearn==0.0
 smmap==5.0.0
 smmap2==3.0.1
 soupsieve==2.3.2.post1
@@ -115,9 +121,10 @@ tensorboard==2.9.0
 tensorboard-data-server==0.6.1
 tensorboard-plugin-wit==1.8.1
 terminado==0.15.0
+threadpoolctl==3.1.0
 tinycss2==1.1.1
 tomli==2.0.1
-torch==1.11.0+cu113
+torch==1.11.0
 torch-tb-profiler==0.4.0
 torchmetrics==0.8.2
 tornado==6.1

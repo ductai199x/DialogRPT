@@ -15,5 +15,9 @@ etc/
 share/
 include/
 model/
+restore/
+checkpoints/
+lightning_logs/
+__pycache__
 *scratch*
 *log*

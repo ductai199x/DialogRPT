@@ -27,8 +27,8 @@ class SimpleScorer(torch.nn.Module):
         # from our embedding tensor!
         word_dim = pretrained_word_emb.size(1)
 
-        self.word_embedings = torch.nn.Embedding.from_pretrained(pretrained_word_emb, freeze=True)
-        self.pos_embedings = torch.nn.Embedding.from_pretrained(pretrained_pos_emb, freeze=True)
+        self.word_embedings = torch.nn.Embedding.from_pretrained(pretrained_word_emb, freeze=False)
+        self.pos_embedings = torch.nn.Embedding.from_pretrained(pretrained_pos_emb, freeze=False)
         self.pos_ids = torch.arange(0, seq_len).cuda()
 
         self.classifier = torch.nn.Sequential(
@@ -200,10 +200,13 @@ class SimpleScorerPLWrapper(LightningModule):
 
 
 if __name__ == "__main__":
-    feedback = "depth"
+    feedback = "updown"
     val_ds_path = f"/home/tai/1-workdir/11-dialog-rpt/data/test/human_feedback/{feedback}.tsv"
     train_ds_path = f"/home/tai/1-workdir/11-dialog-rpt/data/out/{feedback}/train.tsv"
-    min_score_gap = 20.0
+    if feedback == "updown":
+        min_score_gap = 20.0
+    elif feedback in ["depth", "width"]:
+        min_score_gap = 4.0
     min_rank_gap = 0.5
     tokenizer = GPT2Tokenizer.from_pretrained("gpt2", padding=True, max_length=1024, truncation=True)
     val_dl = RedditResponseDataLoader(
@@ -233,7 +236,7 @@ if __name__ == "__main__":
     max_epochs = 30
     log_dir = "src/lightning_logs"
     model_name = "simple-scorer"
-    version = "version_0.3"
+    version = f"version_0.4_{feedback}"
 
     logger = TensorBoardLogger(
         save_dir=log_dir,
@@ -252,17 +255,27 @@ if __name__ == "__main__":
         mode="max",
     )
 
-    # prev_ckpt = "src/lightning_logs/simple-scorer/version_0.2/checkpoints/simple-scorer-epoch=15-val_acc=0.6132.ckpt"
-    prev_ckpt = None
+    # prev_ckpt = "src/lightning_logs/simple-scorer/version_0.3_width/checkpoints/simple-scorer-epoch=07-val_acc=0.7600.ckpt"
+    # prev_ckpt = "src/lightning_logs/simple-scorer/version_0.3_depth/checkpoints/simple-scorer-epoch=02-val_acc=0.7000.ckpt"
+    prev_ckpt = "src/lightning_logs/simple-scorer/version_0.3_updown/checkpoints/simple-scorer-epoch=21-val_acc=0.6296.ckpt"
+    # prev_ckpt = None
     resume = False
 
-    model = SimpleScorerPLWrapper(
-        trsf_word_emb,
-        trsf_pos_emb,
-        hidden_dim=1024,
-    )
     if prev_ckpt is not None:
-        model = model.load_from_checkpoint(prev_ckpt)
+        model = SimpleScorerPLWrapper.load_from_checkpoint(
+            prev_ckpt,
+            pretrained_word_emb=trsf_word_emb,
+            pretrained_pos_emb=trsf_pos_emb,
+            hidden_dim=1024,
+            lr=1e-4,
+        )
+    else:
+        model = SimpleScorerPLWrapper(
+            trsf_word_emb,
+            trsf_pos_emb,
+            hidden_dim=1024,
+            lr=1e-4,
+        )
 
     trainer = Trainer(
         gpus=1,
@@ -281,6 +294,7 @@ if __name__ == "__main__":
         trainer.fit(model, train_dl, val_dl)
         trainer.test(model, val_dl)
     except (Exception) as e:
+        print(e)
         raise Exception('Smelly socks').with_traceback(e.__traceback__)
     finally:
         del train_dl, val_dl
