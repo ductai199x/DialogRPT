@@ -10,56 +10,14 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from torchmetrics import Accuracy, SpearmanCorrCoef
 from transformers19 import GPT2Model, GPT2Config, GPT2Tokenizer
 from dataloader import *
+from pl_FC import FullyConnectedScorer
+from pl_CNN import CNNScorer
+from pl_LSTM import LSTMScorer
 
-
-class SimpleScorer(torch.nn.Module):
-    def __init__(
-        self, 
-        pretrained_word_emb: torch.Tensor, 
-        pretrained_pos_emb: torch.Tensor,
-        seq_len=50,
-        hidden_dim=512,
-    ):
-        # call super class constructor
-        super().__init__()
-
-        # Extracting the word vector dimension
-        # from our embedding tensor!
-        word_dim = pretrained_word_emb.size(1)
-
-        self.word_embedings = torch.nn.Embedding.from_pretrained(pretrained_word_emb, freeze=False)
-        self.pos_embedings = torch.nn.Embedding.from_pretrained(pretrained_pos_emb, freeze=False)
-        self.pos_ids = torch.arange(0, seq_len).cuda()
-
-        self.classifier = torch.nn.Sequential(
-            torch.nn.Linear(word_dim, hidden_dim),
-            torch.nn.Dropout(0.5),
-            torch.nn.ReLU(),
-            torch.nn.BatchNorm1d(seq_len),
-            torch.nn.Linear(hidden_dim, hidden_dim//2),
-            torch.nn.Dropout(0.25),
-            torch.nn.ReLU(),
-            torch.nn.Linear(hidden_dim//2, 1),
-        )
-
-    def forward(self, seq1, seq2):
-        # --- your code starts here
-        seq1_emb = self.word_embedings(seq1)
-        seq2_emb = self.word_embedings(seq2)
-
-        pos_emb = self.pos_embedings(self.pos_ids)
-        seq1_emb = seq1_emb + pos_emb
-        seq2_emb = seq2_emb + pos_emb
-
-        seq1_score = self.classifier(seq1_emb).mean(dim=1)
-        seq2_score = self.classifier(seq2_emb).mean(dim=1)
-
-        return seq1_score.squeeze(), seq2_score.squeeze()
-
-
-class SimpleScorerPLWrapper(LightningModule):
+class ScorerPLWrapper(LightningModule):
     def __init__(
         self,
+        model: torch.nn.Module,
         pretrained_word_emb: torch.Tensor,
         pretrained_pos_emb: torch.Tensor,
         seq_len=50,
@@ -67,7 +25,7 @@ class SimpleScorerPLWrapper(LightningModule):
         lr=1e-4,
     ):
         super().__init__()
-        self.model = SimpleScorer(
+        self.model = model(
             pretrained_word_emb,
             pretrained_pos_emb,
             seq_len=seq_len,
@@ -200,7 +158,7 @@ class SimpleScorerPLWrapper(LightningModule):
 
 
 if __name__ == "__main__":
-    feedback = "updown"
+    feedback = "width"
     val_ds_path = f"/home/tai/1-workdir/11-dialog-rpt/data/test/human_feedback/{feedback}.tsv"
     train_ds_path = f"/home/tai/1-workdir/11-dialog-rpt/data/out/{feedback}/train.tsv"
     if feedback == "updown":
@@ -233,7 +191,7 @@ if __name__ == "__main__":
     trsf_word_emb = model_weights['transformer.wte.weight'].clone()
     trsf_pos_emb = model_weights['transformer.wpe.weight'].clone()
 
-    max_epochs = 30
+    max_epochs = 20
     log_dir = "src/lightning_logs"
     model_name = "simple-scorer"
     version = f"version_0.4_{feedback}"
@@ -257,20 +215,22 @@ if __name__ == "__main__":
 
     # prev_ckpt = "src/lightning_logs/simple-scorer/version_0.3_width/checkpoints/simple-scorer-epoch=07-val_acc=0.7600.ckpt"
     # prev_ckpt = "src/lightning_logs/simple-scorer/version_0.3_depth/checkpoints/simple-scorer-epoch=02-val_acc=0.7000.ckpt"
-    prev_ckpt = "src/lightning_logs/simple-scorer/version_0.3_updown/checkpoints/simple-scorer-epoch=21-val_acc=0.6296.ckpt"
-    # prev_ckpt = None
+    # prev_ckpt = "src/lightning_logs/simple-scorer/version_0.3_updown/checkpoints/simple-scorer-epoch=21-val_acc=0.6296.ckpt"
+    prev_ckpt = None
     resume = False
 
     if prev_ckpt is not None:
-        model = SimpleScorerPLWrapper.load_from_checkpoint(
+        model = ScorerPLWrapper.load_from_checkpoint(
             prev_ckpt,
+            model=FullyConnectedScorer,
             pretrained_word_emb=trsf_word_emb,
             pretrained_pos_emb=trsf_pos_emb,
             hidden_dim=1024,
             lr=1e-4,
         )
     else:
-        model = SimpleScorerPLWrapper(
+        model = ScorerPLWrapper(
+            FullyConnectedScorer,
             trsf_word_emb,
             trsf_pos_emb,
             hidden_dim=1024,
