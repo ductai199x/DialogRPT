@@ -19,6 +19,7 @@ model/
 restore/
 checkpoints/
 lightning_logs/
+lightning_checkpoints/
 __pycache__
 *scratch*
 *log*
