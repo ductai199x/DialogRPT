@@ -26,3 +26,7 @@ def download_model(path, overwrite=False):
     print('\n'.join(cmds))
     processes = [subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE) for cmd in cmds]
     [process.communicate() for process in processes]
+
+
+if __name__ == "__main__":
+    download_model("./restore")
