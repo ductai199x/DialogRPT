@@ -8,6 +8,7 @@ class FullyConnectedScorer(torch.nn.Module):
         pretrained_pos_emb: torch.Tensor,
         seq_len=50,
         hidden_dim=1024,
+        device="cuda",
     ):
         super().__init__()
 
@@ -15,7 +16,7 @@ class FullyConnectedScorer(torch.nn.Module):
 
         self.word_embedings = torch.nn.Embedding.from_pretrained(pretrained_word_emb, freeze=False)
         self.pos_embedings = torch.nn.Embedding.from_pretrained(pretrained_pos_emb, freeze=False)
-        self.pos_ids = torch.arange(0, seq_len).cuda()
+        self.pos_ids = torch.arange(0, seq_len).to(device)
 
         self.classifier = torch.nn.Sequential(
             torch.nn.Linear(word_dim, hidden_dim),

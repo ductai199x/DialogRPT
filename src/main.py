@@ -86,6 +86,7 @@ def get_model() -> LightningModule:
         "pretrained_word_emb": trsf_word_emb,
         "pretrained_pos_emb": trsf_pos_emb,
         "hidden_dim": 1024,
+        "device": "cpu" if ARGS.cpu else "cuda",
     }
 
     if ARGS.arch == "RPT":

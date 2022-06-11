@@ -14,6 +14,7 @@ class CNNScorer(torch.nn.Module):
         num_filters=[100, 100, 100],
         num_classes=2,
         dropout=0.5,
+        device="cuda",
     ):
         """
         The constructor for CNN_NLP class.
@@ -40,7 +41,7 @@ class CNNScorer(torch.nn.Module):
         word_dim = pretrained_word_emb.size(1)
         self.word_embedings = torch.nn.Embedding.from_pretrained(pretrained_word_emb, freeze=True)
         self.pos_embedings = torch.nn.Embedding.from_pretrained(pretrained_pos_emb, freeze=True)
-        self.pos_ids = torch.arange(0, seq_len).cuda()
+        self.pos_ids = torch.arange(0, seq_len).to(device)
         # Conv Network
 
         self.conv1d_list = nn.ModuleList(

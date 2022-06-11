@@ -12,6 +12,7 @@ class LSTMScorer(torch.nn.Module):
         word_dropout=0.1,
         pred_dropout=0.1,
         bidirectional=False,
+        device="cuda"
     ):
 
         super().__init__()
@@ -21,7 +22,7 @@ class LSTMScorer(torch.nn.Module):
         word_dim = pretrained_word_emb.size(1)
         self.word_embedings = torch.nn.Embedding.from_pretrained(pretrained_word_emb, freeze=True)
         self.pos_embedings = torch.nn.Embedding.from_pretrained(pretrained_pos_emb, freeze=True)
-        self.pos_ids = torch.arange(0, seq_len).cuda()
+        self.pos_ids = torch.arange(0, seq_len).to(device)
         self._embed_dropout = torch.nn.Dropout(word_dropout)
         self._lstm = torch.nn.LSTM(
             word_dim, hidden_dim, num_layers=lstm_layers, bidirectional=bidirectional, batch_first=True

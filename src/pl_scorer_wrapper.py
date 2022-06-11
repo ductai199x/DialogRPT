@@ -158,7 +158,7 @@ class ScorerPLWrapper(LightningModule):
 
 
 if __name__ == "__main__":
-    feedback = "width"
+    feedback = "depth"
     val_ds_path = f"/home/tai/1-workdir/11-dialog-rpt/data/test/human_feedback/{feedback}.tsv"
     train_ds_path = f"/home/tai/1-workdir/11-dialog-rpt/data/out/{feedback}/train.tsv"
     if feedback == "updown":
@@ -191,7 +191,7 @@ if __name__ == "__main__":
     trsf_word_emb = model_weights['transformer.wte.weight'].clone()
     trsf_pos_emb = model_weights['transformer.wpe.weight'].clone()
 
-    max_epochs = 20
+    max_epochs = 10
     log_dir = "src/lightning_logs"
     model_name = "simple-scorer"
     version = f"version_0.4_{feedback}"
