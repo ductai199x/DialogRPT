@@ -69,12 +69,12 @@ The project is inspired by the dialog response ranking models proposed by [Micro
     ```
 5. Use `gdown` to download the checkpoints for our trained models
     ```
-    gdown --fuzzy https://drive.google.com/file/d/1oKO5jIIXr69paRkFlrrwnkSyYLeigaga/view\?usp\=sharing
+    gdown --fuzzy https://drive.google.com/file/d/1ChcIv8kZAolLB7GYWQwHqqfm_sLnKKwO/view\?usp\=sharing
     unzip lightning_checkpoints.zip
     ```
 6. Download the training data
     ```
-    gdown --fuzzy https://drive.google.com/file/d/15CZUj1OlEPga8vmAq8dL0StMYDT-tAGF/view\?usp\=sharing
+    gdown --fuzzy https://drive.google.com/file/d/1qbrxAO8rPqBhT1QGKe5LBX6D4NR2edD3/view\?usp\=sharing
     unzip training_data.zip
     ```
 7. Download the testing/evaluating data
